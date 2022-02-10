@@ -1,0 +1,47 @@
+---
+title: "Visualize Sprig Pruning"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Visualize Sprig Pruning}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(locater)
+library(kalis)
+
+# Load simulated haplotypes and recombination map
+CacheHaplotypes(SmallHaps)
+pars <- Parameters(CalcRho(diff(SmallMap)))
+
+
+fwd <- MakeForwardTable(pars)
+bck <- MakeBackwardTable(pars)
+Forward(fwd,pars,50)
+Backward(bck,pars,50)
+
+cl <- Clades(fwd,bck,pars)
+sp <- Sprigs(Neighbors(cl))
+
+M1 <- CladeMat(cl,ploidy = 2)
+M2 <- CladeMat(cl,ploidy = 2,sprigs.to.prune = sp)
+
+perm <- fastcluster::hclust(stats::as.dist(-M1),method="average")$order
+print(lattice::levelplot(M1[perm,][,rev(perm)],
+                         useRaster = TRUE,
+                         col.regions = grDevices::colorRampPalette(RColorBrewer::brewer.pal(9,name = "BuPu"))(100),
+                         yaxt = "n", xaxt = "n", xlab = "", ylab = "", xaxt = "n", at = seq(0,4,len=20)))
+print(lattice::levelplot(M2[perm,][,rev(perm)],
+                         useRaster = TRUE,
+                         col.regions = grDevices::colorRampPalette(RColorBrewer::brewer.pal(9,name = "BuPu"))(100),
+                         yaxt = "n", xaxt = "n", xlab = "", ylab = "", xaxt = "n", at = seq(0,4,len=20)))
+
+```

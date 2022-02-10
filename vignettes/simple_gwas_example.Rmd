@@ -1,0 +1,31 @@
+---
+title: "Simple GWAS Example"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Simple GWAS Example}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(locater)
+library(kalis)
+# Load simulated haplotypes and recombination map
+CacheHaplotypes(SmallHaps)
+pars <- Parameters(CalcRho(diff(SmallMap)))
+
+# simulate m phenotypes
+n <- N()/2
+m <- 20
+y <- matrix(rnorm(n*m),n,m)
+
+TestLoci(y, pars, target.loci = 1:10, num.ckpts = 1L, verbose = TRUE, use.forking = FALSE, nthreads = 1L)
+
+```
