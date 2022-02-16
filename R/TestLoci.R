@@ -1,7 +1,9 @@
 #' @export
 TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
                      A = NULL,
-                     num.ckpts = 0L, ckpt.first.locus = FALSE,
+                     num.ckpts = 0L,
+                     ckpt.first.locus = FALSE,
+                     point.est = FALSE,
                      verbose = FALSE,
                      use.forking = FALSE, nthreads = 1L){
   # return a list with length and names target.idx, each locater testing results
@@ -10,6 +12,8 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
 
   # input checks
   #####################
+  if(!is.matrix(y)){y <- as.matrix(y)}
+
   if(is.null(N())){
     stop("haplotypes must be cached before running TestHaplotypes, see ?kalis::CacheHaplotypes")
   }
@@ -25,7 +29,7 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
   target.loci <- sort(target.loci)
 
 
-  if(length(num.ckpts)!=1 || as.integer(num.ckpts)!=num.ckpts || num.ckpts <= 0){
+  if(length(num.ckpts)!=1 || as.integer(num.ckpts)!=num.ckpts || num.ckpts < 0){
     stop("num.ckpts must be a positive integer")
   }
 
@@ -88,17 +92,21 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
     g <- t(Haps2Genotypes(QueryCache(target.loci[t]), ploidy = ploidy, method = "additive"))
 
     smt.res <- TestMarker(h0, g)
+    smt.tested.ind <- !all(is.na(smt.res))
 
     sprigs <- Sprigs(r, use.forking = use.forking, nthreads = nthreads)
 
     if(length(na.omit(unique(sprigs))) < 32){
+      sprigs.tested.ind <- FALSE
       ro.res <- list("p.value" = rep(NA_real_,ncol(y)),
                      "y" = smt.res$y)
+      r <- CladeMat(r, ploidy = 2L, assemble = FALSE, use.forking = use.forking, nthreads = nthreads)
     } else {
+      sprigs.tested.ind <- TRUE
       ro.res <- TestSprigs(smt.res$y,sprigs)
+      r <- CladeMat(r, ploidy = 2L, sprigs.to.prune = sprigs, assemble = FALSE, use.forking = use.forking, nthreads = nthreads)
     }
 
-    r <- CladeMat(r, ploidy = 2L, sprigs.to.prune = sprigs, assemble = FALSE, use.forking = use.forking, nthreads = nthreads)
     r <- do.call(cbind,r)
     r <- 0.5 * (r + t(r))
 
@@ -107,11 +115,69 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
     # }
 
     qf.res <- TestCladeMat(ro.res$y,r,smt.res$Q, other.test.pvalues = list(smt.res$p.value, ro.res$p.value),
+                           point.est = point.est,
                            use.forking = use.forking, nthreads = nthreads)
 
-    res[[t]] <- list("smt.p.value" = smt.res$p.value,
-                     "ro.p.value" = ro.res$p.value,
-                     "qf.res" = qf.res)
+    if(point.est){
+
+      res[[t]] <- data.frame("interesting" = qf.res[1,],
+                             "k" = qf.res[2,],
+                             "smt" = -log10(smt.res$p.value),
+                             "ro" = -log10(ro.res$p.value),
+                             "qform" = qf.res[5,])
+
+      res[[t]]$fish <- if(smt.tested.ind){
+        if(sprigs.tested.ind){
+          fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform)
+        } else {
+          fish(res[[t]]$smt,res[[t]]$qform)
+        }
+      } else {
+        if(sprigs.tested.ind){
+          fish(res[[t]]$ro,res[[t]]$qform)
+        } else {
+          res[[t]]$qform
+        }
+      }
+
+
+    } else {
+
+      res[[t]] <- data.frame("interesting" = qf.res[1,],
+                             "k" = qf.res[2,],
+                             "smt" = -log10(smt.res$p.value),
+                             "ro" = -log10(ro.res$p.value),
+                             "qform.lower" = qf.res[3,],
+                             "qform.upper" = qf.res[4,])
+
+      res[[t]]$fish.lower <- if(smt.tested.ind){
+        if(sprigs.tested.ind){
+          fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform.lower)
+        } else {
+          fish(res[[t]]$smt,res[[t]]$qform.lower)
+        }
+      } else {
+        if(sprigs.tested.ind){
+          fish(res[[t]]$ro,res[[t]]$qform.lower)
+        } else {
+          res[[t]]$qform.lower
+        }
+      }
+
+      res[[t]]$fish.upper <- if(smt.tested.ind){
+        if(sprigs.tested.ind){
+          fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform.upper)
+        } else {
+          fish(res[[t]]$smt,res[[t]]$qform.upper)
+        }
+      } else {
+        if(sprigs.tested.ind){
+          fish(res[[t]]$ro,res[[t]]$qform.upper)
+        } else {
+          res[[t]]$qform.upper
+        }
+      }
+    }
 
     if(verbose){print(paste(length(target.loci) - t + 1L,"out of",length(target.loci),"loci tested.",proc.time()[3] - start1,"seconds required."))}
   }

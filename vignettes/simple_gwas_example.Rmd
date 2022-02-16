@@ -17,15 +17,49 @@ knitr::opts_chunk$set(
 ```{r setup}
 library(locater)
 library(kalis)
+
 # Load simulated haplotypes and recombination map
 CacheHaplotypes(SmallHaps)
-pars <- Parameters(CalcRho(diff(SmallMap)))
+map <- SmallMap
 
-# simulate m phenotypes
-n <- N()/2
-m <- 20
+# Specify Run Parameters
+n <- N()/2 # number of samples
+m <- 20 # number of phenotypes
+smt.threshold <- 3
+
+# simulate phenotypes 
 y <- matrix(rnorm(n*m),n,m)
+g <- QueryCache(c(204,205,207))
+y[,7] <- y[,7] + 3 * colSums(g[,seq(1,N(),2)] + g[,seq(2,N(),2)])
+A <- matrix(1,n,1)
 
-TestLoci(y, pars, target.loci = 1:10, num.ckpts = 1L, verbose = TRUE, use.forking = FALSE, nthreads = 1L)
+# Determine target loci based on SMT
+smt.res <- TestCachedMarkers(y, A = A)
+target.loci <- FindTargetVars(map, min.cM = 0.1, initial.targets = smt.res, smt.thresh = 3)
+
+# Test Locater
+pars <- Parameters(CalcRho(diff(map),s = 0.01))
+res <- TestLoci(y, pars, target.loci = target.loci, num.ckpts = 1L, verbose = TRUE, use.forking = FALSE, nthreads = 1L)
+
+st <- sapply(res,function(x){getElement(x,"smt")[7]})
+fu <- sapply(res,function(x){getElement(x,"fish.upper")[7]})
+fl <- sapply(res,function(x){getElement(x,"fish.lower")[7]})
+
+plot(0,0, type = "n", 
+     ylim=range(pretty(c(0,max(fu,na.rm=T)))),
+     xlim = range(map),
+     las=1,bty="n",
+     ylab = "-log10 p-value", xlab = "cM position")
+segments(x0 = map[target.loci],
+         y0 = fl,
+         x1 = map[target.loci],
+         y1 = fu,
+         lwd = 1,
+         lty=1,
+         col ="gold")
+points(map[target.loci],fl,col="navy",pch=20)
+points(map[target.loci],fu,col="darkorange",pch=20)
+points(map[target.loci],st,col="black",pch=4)
+abline(h=3)
 
 ```

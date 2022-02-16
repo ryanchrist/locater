@@ -570,7 +570,11 @@ test_sprigs <- function(y,sprigs,ploidy = 2L){
   }
 
   outliers.exps <- tail(r$exps,32)
-  p_value <- ro::mpse.test(rev(outliers.exps))
+  if(length(outliers.exps) < 32){
+    p_value = NA_real_
+  } else {
+    p_value <- ro::mpse.test(rev(outliers.exps))
+  }
   temp.exclude.idx <- which(r$ranks > r$n - 32)
 
 

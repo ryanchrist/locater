@@ -4,7 +4,15 @@
 \alias{TestCladeMat}
 \title{Test a Clade Matrix for association with phenotypes}
 \usage{
-TestCladeMat(y, M, Q, traces = NULL)
+TestCladeMat(
+  y,
+  M,
+  Q,
+  traces = NULL,
+  other.test.pvalues = NULL,
+  use.forking = FALSE,
+  nthreads = 1L
+)
 }
 \arguments{
 \item{y}{a matrix of phenotypes}

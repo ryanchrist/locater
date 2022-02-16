@@ -103,6 +103,7 @@ CalcBounds <- function(f = function(k,args){eigs_sym(args[[1]],k)},
                        tau = 1, # may be a vector as long as obs
                        delta = 0, # may be a vector as long as obs
                        only.point.est = FALSE, # if TRUE, then the first element of k is used for calculated trunc part
+                       only.bounds.est = FALSE,
                        eval.for.popstruc = FALSE,
                        unfinished = NULL,
                        lower.tail = TRUE,
@@ -119,12 +120,12 @@ CalcBounds <- function(f = function(k,args){eigs_sym(args[[1]],k)},
     res[2,] <- k[1]
 
     if(one.inflation.setting){  # calculate function only once
-      calc.func <- CalcBounds2(traces, e, tau[1], delta[1], only.point.est, parallel.sapply = parallel.sapply)
+      calc.func <- CalcBounds2(traces, e, tau[1], delta[1], only.point.est, only.bounds.est, parallel.sapply = parallel.sapply)
     }
 
     for(p in 1:length(obs)){
       if(!one.inflation.setting){  # calculate function separately for each phenotype
-        calc.func <- CalcBounds2(traces, e, tau[p], delta[p], only.point.est, parallel.sapply = parallel.sapply)
+        calc.func <- CalcBounds2(traces, e, tau[p], delta[p], only.point.est, only.bounds.est, parallel.sapply = parallel.sapply)
       }
       res[5,p] <- calc.func(obs[p],lower.tail)
     }
@@ -144,14 +145,14 @@ CalcBounds <- function(f = function(k,args){eigs_sym(args[[1]],k)},
     e <- f(k[j], args)
 
     if(one.inflation.setting){ # calculate function only once
-      calc.func <- CalcBounds2(traces, e, tau[1], delta[1], parallel.sapply = parallel.sapply)
+      calc.func <- CalcBounds2(traces, e, tau[1], delta[1], only.bounds.est = only.bounds.est, parallel.sapply = parallel.sapply)
     }
 
     for(p in which(unfinished)){
       res[2,p] <- k[j]
 
       if(!one.inflation.setting){ # calculate function separately for each phenotype
-        calc.func <- CalcBounds2(traces, e, tau[p], delta[p], parallel.sapply = parallel.sapply)
+        calc.func <- CalcBounds2(traces, e, tau[p], delta[p], only.bounds.est = only.bounds.est, parallel.sapply = parallel.sapply)
       }
 
       res[3:5,p] <- calc.func(obs[p],lower.tail)
@@ -181,13 +182,17 @@ CalcBounds <- function(f = function(k,args){eigs_sym(args[[1]],k)},
 }
 
 
-CalcBounds2 <- function(traces, e = NULL, tau = 1, delta = 0, only.point.est = FALSE, parallel.sapply = base::sapply){
+CalcBounds2 <- function(traces, e = NULL, tau = 1, delta = 0, only.point.est = FALSE, only.bounds.est = FALSE, parallel.sapply = base::sapply){
 
   # this returns a function that is NOT vectorized (it can only take observed value at a time)
   # the returned function returns a vector of three numbers:
   # first entry: -log10 lower bound
   # second entry: -log10 upper bound (NULL if e is NULL)
   # third entry: -log10 pvalue point estimate (NULL if e is NULL)
+
+  if(only.point.est & only.bounds.est){
+    stop("only.point.est and only.bounds.est cannot both be TRUE")
+  }
 
   if(tau < 0 | delta < 0 | length(tau) != 1 | length(delta) != 1){
     stop("tau and delta must be greater than or equal to 0 and have length 1.")
@@ -231,14 +236,15 @@ CalcBounds2 <- function(traces, e = NULL, tau = 1, delta = 0, only.point.est = F
   R.sum.etasq.deltasq <- delta2 * R.sum.etasq
 
 
-  # Point Estimate Function
-  gauss.tcdf <- suppressWarnings(QForm::QFGauss(tau * e$values, sigma = sqrt((2 + 4*delta2)*R.sum.etasq),parallel.sapply = parallel.sapply))
-  E.R <- (1 + delta2) * R.sum.eta
-  gauss.approxfullcdf <- function(x, density = FALSE, lower.tail = TRUE, log.p = FALSE) gauss.tcdf(x-E.R, density = density, lower.tail = lower.tail, log.p = log.p)
-  attr(gauss.approxfullcdf,"mu") <- attr(gauss.tcdf,"mu") + E.R
-  attr(gauss.approxfullcdf,"Q.sd") <- attr(gauss.tcdf,"Q.sd")
-
   if(only.point.est){
+
+    # Point Estimate Function
+    gauss.tcdf <- suppressWarnings(QForm::QFGauss(tau * e$values, sigma = sqrt((2 + 4*delta2)*R.sum.etasq),parallel.sapply = parallel.sapply))
+    E.R <- (1 + delta2) * R.sum.eta
+    gauss.approxfullcdf <- function(x, density = FALSE, lower.tail = TRUE, log.p = FALSE) gauss.tcdf(x-E.R, density = density, lower.tail = lower.tail, log.p = log.p)
+    attr(gauss.approxfullcdf,"mu") <- attr(gauss.tcdf,"mu") + E.R
+    attr(gauss.approxfullcdf,"Q.sd") <- attr(gauss.tcdf,"Q.sd")
+
 
     function(obs, lower.tail = FALSE){
       if(length(obs) != 1){stop("while this function could be easily parallelized,
@@ -246,7 +252,26 @@ CalcBounds2 <- function(traces, e = NULL, tau = 1, delta = 0, only.point.est = F
       -gauss.approxfullcdf(obs, lower.tail = lower.tail, log.p=T)/log(10)
     }
 
+  } else if(only.bounds.est){
+
+    # Bound Function
+    tcdf <- suppressWarnings(QForm::QFGauss(e$values,parallel.sapply = parallel.sapply))
+    bound.func <- QForm::QFGaussBounds(tcdf,"identity", R.max.abs.eta, R.sum.eta, R.sum.etasq, R.sum.eta.deltasq, R.sum.etasq.deltasq)
+
+    function(obs, lower.tail = FALSE){
+      if(length(obs) != 1){stop("while this function could be easily parallelized,
+                              to keep the code simple, for now it only takes one obs at a time.")}
+      -c(log(bound.func(obs)[1,1:2 + if(lower.tail){0}else{2}]),NA_real_)/log(10)
+    }
+
   } else {
+
+    # Point Estimate Function
+    gauss.tcdf <- suppressWarnings(QForm::QFGauss(tau * e$values, sigma = sqrt((2 + 4*delta2)*R.sum.etasq),parallel.sapply = parallel.sapply))
+    E.R <- (1 + delta2) * R.sum.eta
+    gauss.approxfullcdf <- function(x, density = FALSE, lower.tail = TRUE, log.p = FALSE) gauss.tcdf(x-E.R, density = density, lower.tail = lower.tail, log.p = log.p)
+    attr(gauss.approxfullcdf,"mu") <- attr(gauss.tcdf,"mu") + E.R
+    attr(gauss.approxfullcdf,"Q.sd") <- attr(gauss.tcdf,"Q.sd")
 
     # Bound Function
     tcdf <- suppressWarnings(QForm::QFGauss(e$values,parallel.sapply = parallel.sapply))
@@ -257,7 +282,6 @@ CalcBounds2 <- function(traces, e = NULL, tau = 1, delta = 0, only.point.est = F
                               to keep the code simple, for now it only takes one obs at a time.")}
       -c(log(bound.func(obs)[1,1:2 + if(lower.tail){0}else{2}]),gauss.approxfullcdf(obs,lower.tail = lower.tail,log.p=T))/log(10)
     }
-
   }
 }
 
