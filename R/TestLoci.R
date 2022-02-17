@@ -10,6 +10,7 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
 
   start0 <- proc.time()[3]
 
+
   # input checks
   #####################
   if(!is.matrix(y)){y <- as.matrix(y)}
