@@ -97,6 +97,6 @@ FindTargetVars <- function(map, min.cM = 0.1, from = 1L, to = length(map),
   long.intervals <- which(diff(map[idx]) >= min.cM)
   if(!length(long.intervals)){return(idx)} # no gaps to fill
 
-  l <- lapply(long.intervals,FUN = function(x){divide_interval(map[idx[x]:idx[x+1]],min.cM)})
+  l <- lapply(long.intervals,FUN = function(x){idx[x] - 1L + divide_interval(map[idx[x]:idx[x+1]],min.cM)})
   sort(Reduce(union,c(l,list(idx))))
 }
