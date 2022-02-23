@@ -4,11 +4,12 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
                      num.ckpts = 0L,
                      ckpt.first.locus = FALSE,
                      point.est = FALSE,
+                     k = NULL,
                      verbose = FALSE,
                      use.forking = FALSE, nthreads = 1L){
   # return a list with length and names target.idx, each locater testing results
 
-  start0 <- proc.time()[3]
+  initial.start <- proc.time()[3]
 
 
   # input checks
@@ -39,6 +40,14 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
   }
 
   n <- nrow(y)
+
+  # Although we're not sure if data.table::frank is multithreaded,
+  # since kalis::Clades uses it inside a forked call, we take the extra precaution of
+  # setting DTthreads to 1 here.  data.table is supposed to be able to detect when
+  # it's being called inside a forked process and automatically set this to 1,
+  # but while we have this dependency in kalis::Clades, we keep this here as an
+  # extra precaution
+  data.table::setDTthreads(1L)
 
   # Fit null models to y
   #######################
@@ -78,18 +87,25 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
   if(verbose){print(paste("Starting loop over target loci..."))}
 
   for(t in length(target.loci):1){
-    start1 <- proc.time()[3]
+
+    start0 <- start1 <- proc.time()[3]
     if(num.ckpts){
       Iter(fwd,pars,target.loci[t],nthreads)
     } else {
       if(fwd$l > target.loci[t]){ResetTable(fwd)}
       Forward(fwd,pars,target.loci[t],nthreads = nthreads)
     }
-
     Backward(bck, pars,target.loci[t], nthreads = nthreads)
+    if(verbose){print(paste("Propogating to target",length(target.loci) - t + 1L,"took",proc.time()[3] - start1,"seconds."))}
 
+
+    start1 <- proc.time()[3]
     r <- Clades(fwd, bck, pars, neighbors = TRUE, use.forking = use.forking, nthreads = nthreads)
+    if(verbose){print(paste("Calling clades at target",length(target.loci) - t + 1L,"took",proc.time()[3] - start1,"seconds."))}
+    gc()
 
+
+    start1 <- proc.time()[3]
     g <- t(Haps2Genotypes(QueryCache(target.loci[t]), ploidy = ploidy, method = "additive"))
 
     smt.res <- TestMarker(h0, g)
@@ -101,23 +117,39 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
       sprigs.tested.ind <- FALSE
       ro.res <- list("p.value" = rep(NA_real_,ncol(y)),
                      "y" = smt.res$y)
-      r <- CladeMat(r, ploidy = 2L, assemble = FALSE, use.forking = use.forking, nthreads = nthreads)
     } else {
       sprigs.tested.ind <- TRUE
-      ro.res <- TestSprigs(smt.res$y,sprigs)
-      r <- CladeMat(r, ploidy = 2L, sprigs.to.prune = sprigs, assemble = FALSE, use.forking = use.forking, nthreads = nthreads)
+      ro.res <- TestSprigs(smt.res$y, sprigs,
+                           ploidy = ploidy,
+                           use.forking = use.forking, nthreads = nthreads)
     }
+    if(verbose){print(paste("Testing Marker and Sprigs at target",length(target.loci) - t + 1L,"took",proc.time()[3] - start1,"seconds."))}
 
+
+    start1 <- proc.time()[3]
+    r <- CladeMat(r, ploidy = 2L, sprigs.to.prune = if(sprigs.tested.ind){sprigs}else{NULL},
+                  assemble = FALSE, use.forking = use.forking, nthreads = nthreads)
+    if(verbose){print(paste("Building CladeMat cols at target",length(target.loci) - t + 1L,"took",proc.time()[3] - start1,"seconds."))}
+    gc()
+
+    start1 <- proc.time()[3]
     r <- do.call(cbind,r)
     r <- 0.5 * (r + t(r))
+    if(verbose){print(paste("Assembling CladeMat at target",length(target.loci) - t + 1L,"took",proc.time()[3] - start1,"seconds."))}
+    gc()
 
     # f <- function(x){ matrix multiplication function to pass to TestClades instead of explicit matrix r
     #   # do matrix multiplication with r and smt.res$Q
     # }
 
+
+    start1 <- proc.time()[3]
     qf.res <- TestCladeMat(ro.res$y,r,smt.res$Q, other.test.pvalues = list(smt.res$p.value, ro.res$p.value),
                            point.est = point.est,
+                           k = k,
                            use.forking = use.forking, nthreads = nthreads)
+    if(verbose){print(paste("TestCladeMat at target",length(target.loci) - t + 1L,"took",proc.time()[3] - start1,"seconds."))}
+    gc()
 
     if(point.est){
 
@@ -180,10 +212,10 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
       }
     }
 
-    if(verbose){print(paste(length(target.loci) - t + 1L,"out of",length(target.loci),"loci tested.",proc.time()[3] - start1,"seconds required."))}
+    if(verbose){print(paste(length(target.loci) - t + 1L,"out of",length(target.loci),"loci tested.",proc.time()[3] - start0,"seconds required."))}
   }
 
-  if(verbose){print(paste("Testing complete.",proc.time()[3] - start0,"seconds required."))}
+  if(verbose){print(paste("Testing complete.",proc.time()[3] - initial.start,"seconds required."))}
 
   res
 }

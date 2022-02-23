@@ -35,7 +35,7 @@ TestMarker <- function(x, g){
 
   # use statmod::qresiduals (randomized quantile residuals to extend this to GLMs)
 
-  nu <- n-ncol(x$Q)-1
+  nu <- nrow(x$Q)-ncol(x$Q)-1
   list("p.value" = exp(pf(q = Z2*nu / (x$sumsq - Z2) , df1 = 1, df2 = nu, lower.tail = FALSE, log.p = TRUE)),
        "y" = y.resids.local, # iid Gaussians under null
        "Q" = Q.local)

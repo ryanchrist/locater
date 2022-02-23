@@ -19,11 +19,6 @@ divide_interval <- function(x,min.gap){
 
 
 
-# map <- cumsum(runif(1e3))
-# targets0 <- sort(sample.int(length(map),20,replace = FALSE))
-#
-# FillGaps(targets0,map,min.gap=1)
-
 
 #' Helper for Finding Target Variants for Screening
 #'

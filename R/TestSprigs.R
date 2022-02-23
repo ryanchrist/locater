@@ -611,9 +611,13 @@ test_sprigs <- function(y,sprigs,ploidy = 2L){
 }
 
 #' @export
-TestSprigs <- function(y, sprigs, ploidy = 2L){
+TestSprigs <- function(y, sprigs, ploidy = 2L, use.forking = FALSE, nthreads = 1L){
 
-  res <- apply(y,2,test_sprigs, sprigs = sprigs, ploidy = ploidy, simplify = FALSE)
+  if(use.forking){
+    res <- parallel::mclapply(as.list(as.data.frame(y)),test_sprigs,sprigs = sprigs, ploidy = ploidy)
+  } else {
+    res <- apply(y,2,test_sprigs, sprigs = sprigs, ploidy = ploidy, simplify = FALSE)
+  }
 
   list("p.value" = unlist(lapply(res,function(z){getElement(z,"p.value")})),
        "y" = do.call(cbind,lapply(res,function(z){getElement(z,"y")})))

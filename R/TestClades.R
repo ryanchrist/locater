@@ -15,7 +15,7 @@
 #' }
 #'
 #' @export
-TestCladeMat <- function(y,M,Q,traces = NULL, other.test.pvalues = NULL, point.est = FALSE, use.forking = FALSE, nthreads = 1L){
+TestCladeMat <- function(y,M,Q,traces = NULL, other.test.pvalues = NULL, point.est = FALSE, k = NULL, use.forking = FALSE, nthreads = 1L){
 
   # process other.test.pvalues dropping any tests that have any missing values
   if(!is.null(other.test.pvalues)){
@@ -38,6 +38,7 @@ TestCladeMat <- function(y,M,Q,traces = NULL, other.test.pvalues = NULL, point.e
     }
   }
 
+  if(!is.null(k)){k <- as.integer(k)}
   n <- nrow(y)
 
   traces <- calc_traces(M, Q = Q, nthreads = nthreads)
@@ -71,7 +72,7 @@ TestCladeMat <- function(y,M,Q,traces = NULL, other.test.pvalues = NULL, point.e
              args = 0,
              obs = obs,
              traces,
-             k = if(point.est){min(n-1,200)}else{unique(pmin(n-1,c(4,20,200)))}, # need n-1 instead of n here because if n,
+             k = if(!is.null(k)){k}else{if(point.est){min(n-1,200)}else{unique(pmin(n-1,c(4,20,200)))}}, # need n-1 instead of n here because if n,
              # RSpectra falls back to eigen which cannot handle functional definition of matrix
              only.point.est = if(point.est){TRUE}else{FALSE}, # if TRUE, then the first element of k is used for calculated trunc part
              only.bounds.est = if(!point.est){TRUE}else{FALSE},
