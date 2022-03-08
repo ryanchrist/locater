@@ -11,6 +11,7 @@ Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.1.2
 Imports: 
+    bettermc,
     data.table,
     kalis,
     QForm,
@@ -20,3 +21,5 @@ Suggests:
     rmarkdown,
     knitr
 VignetteBuilder: knitr
+Depends: 
+    R (>= 2.10)

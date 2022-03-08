@@ -611,10 +611,14 @@ test_sprigs <- function(y,sprigs,ploidy = 2L){
 }
 
 #' @export
-TestSprigs <- function(y, sprigs, ploidy = 2L, use.forking = FALSE, nthreads = 1L){
+TestSprigs <- function(y, sprigs, ploidy = 2L, use.bettermc = FALSE, use.forking = FALSE, nthreads = 1L){
 
   if(use.forking){
-    res <- parallel::mclapply(as.list(as.data.frame(y)),test_sprigs,sprigs = sprigs, ploidy = ploidy)
+    if(use.bettermc){
+      res <- bettermc::mclapply(as.list(as.data.frame(y)),test_sprigs,sprigs = sprigs, ploidy = ploidy)
+    } else {
+      res <- parallel::mclapply(as.list(as.data.frame(y)),test_sprigs,sprigs = sprigs, ploidy = ploidy)
+    }
   } else {
     res <- apply(y,2,test_sprigs, sprigs = sprigs, ploidy = ploidy, simplify = FALSE)
   }

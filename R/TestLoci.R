@@ -6,6 +6,7 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
                      point.est = FALSE,
                      k = NULL,
                      verbose = FALSE,
+                     use.bettermc = FALSE,
                      use.forking = FALSE, nthreads = 1L){
   # return a list with length and names target.idx, each locater testing results
 
@@ -100,7 +101,7 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
 
 
     start1 <- proc.time()[3]
-    r <- Clades(fwd, bck, pars, neighbors = TRUE, use.forking = use.forking, nthreads = nthreads)
+    r <- Clades(fwd, bck, pars, neighbors = TRUE, use.bettermc = use.bettermc, use.forking = use.forking, nthreads = nthreads)
     if(verbose){print(paste("Calling clades at target",length(target.loci) - t + 1L,"took",proc.time()[3] - start1,"seconds."))}
     gc()
 
@@ -121,6 +122,7 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
       sprigs.tested.ind <- TRUE
       ro.res <- TestSprigs(smt.res$y, sprigs,
                            ploidy = ploidy,
+                           use.bettermc = use.bettermc,
                            use.forking = use.forking, nthreads = nthreads)
     }
     if(verbose){print(paste("Testing Marker and Sprigs at target",length(target.loci) - t + 1L,"took",proc.time()[3] - start1,"seconds."))}
@@ -128,7 +130,7 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
 
     start1 <- proc.time()[3]
     r <- CladeMat(r, ploidy = 2L, sprigs.to.prune = if(sprigs.tested.ind){sprigs}else{NULL},
-                  assemble = FALSE, use.forking = use.forking, nthreads = nthreads)
+                  assemble = FALSE, use.bettermc = use.bettermc, use.forking = use.forking, nthreads = nthreads)
     if(verbose){print(paste("Building CladeMat cols at target",length(target.loci) - t + 1L,"took",proc.time()[3] - start1,"seconds."))}
     gc()
 
@@ -147,6 +149,7 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
     qf.res <- TestCladeMat(ro.res$y,r,smt.res$Q, other.test.pvalues = list(smt.res$p.value, ro.res$p.value),
                            point.est = point.est,
                            k = k,
+                           use.bettermc = use.bettermc,
                            use.forking = use.forking, nthreads = nthreads)
     if(verbose){print(paste("TestCladeMat at target",length(target.loci) - t + 1L,"took",proc.time()[3] - start1,"seconds."))}
     gc()

@@ -15,7 +15,7 @@
 #' }
 #'
 #' @export
-TestCladeMat <- function(y,M,Q,traces = NULL, other.test.pvalues = NULL, point.est = FALSE, k = NULL, use.forking = FALSE, nthreads = 1L){
+TestCladeMat <- function(y,M,Q,traces = NULL, other.test.pvalues = NULL, point.est = FALSE, k = NULL, use.bettermc = FALSE, use.forking = FALSE, nthreads = 1L){
 
   # process other.test.pvalues dropping any tests that have any missing values
   if(!is.null(other.test.pvalues)){
@@ -55,7 +55,11 @@ TestCladeMat <- function(y,M,Q,traces = NULL, other.test.pvalues = NULL, point.e
   }
 
   if(use.forking){
-    parallel.sapply <- function(x,FUN,...){unlist(parallel::mclapply(x,FUN,...,mc.cores = nthreads))}
+    if(use.bettermc){
+      parallel.sapply <- function(x,FUN,...){unlist(bettermc::mclapply(x,FUN,...,mc.cores = nthreads))}
+    } else {
+      parallel.sapply <- function(x,FUN,...){unlist(parallel::mclapply(x,FUN,...,mc.cores = nthreads))}
+    }
   } else {
     parallel.sapply <- sapply
   }

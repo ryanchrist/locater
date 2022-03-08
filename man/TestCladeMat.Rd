@@ -10,6 +10,8 @@ TestCladeMat(
   Q,
   traces = NULL,
   other.test.pvalues = NULL,
+  point.est = FALSE,
+  k = NULL,
   use.forking = FALSE,
   nthreads = 1L
 )
