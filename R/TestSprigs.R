@@ -574,38 +574,29 @@ test_sprigs <- function(y,sprigs,ploidy = 2L){
     p_value = NA_real_
   } else {
     p_value <- ro::mpse.test(rev(outliers.exps))
+    r$exps[(r$n - 32 + 1L):r$n] <- rexp(32)
   }
-  temp.exclude.idx <- which(r$ranks > r$n - 32)
-
 
   star.z <- rep(NA_real_,n.unique.sprigs)
 
   if(length(zero.weighted.sprigs)){
-    star.z[-zero.weighted.sprigs] <- ro::inverse.renyi(r, exclude.idx = temp.exclude.idx)
+    star.z[-zero.weighted.sprigs] <- ro::inverse.renyi(r)
   } else {
-    star.z <- ro::inverse.renyi(r, exclude.idx = temp.exclude.idx)
+    star.z <- ro::inverse.renyi(r)
   }
-
-  outlier.sprig.idx <- which(is.na(star.z) & !is.na(tilde.z))
 
   sprig.sd <- ifelse(active.sprig.ind,renyi.sprig.sd,alt.renyi.sprig.sd)
 
   y.updates <- sample.weights * ((star.z - tilde.z) / sprig.sd)[renyi.sprigs]
   y.updates[is.na(y.updates)] <- 0
 
-
   # Update y.resids
   ###########################################
   y.resids <- y.resids + y.updates
 
-  # Replace outlier y.resids with iid Gaussians
-  ###############################################
-  outlier.idx <- which(renyi.sprigs %in% outlier.sprig.idx)
-  y.resids[outlier.idx] <- rnorm(length(outlier.idx))
-
   list("p.value" = p_value,
        "y" = y.resids,
-       "outliers.idx" = outlier.idx,
+       #"outliers.idx" = outlier.idx,
        "outliers.exps" = outliers.exps
   )
 }
