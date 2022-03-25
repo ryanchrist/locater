@@ -145,6 +145,7 @@ CalcBounds <- function(f = function(k,args){eigs_sym(args[[1]],k)},
     e <- f(k[j], args)
 
     if(one.inflation.setting){ # calculate function only once
+      if(exists("calc.func.backup")){rm(calc.func.backup)}
       calc.func <- CalcBounds2(traces, e, tau[1], delta[1], only.bounds.est = only.bounds.est, parallel.sapply = parallel.sapply)
     }
 
@@ -152,10 +153,24 @@ CalcBounds <- function(f = function(k,args){eigs_sym(args[[1]],k)},
       res[2,p] <- k[j]
 
       if(!one.inflation.setting){ # calculate function separately for each phenotype
+        if(exists("calc.func.backup")){rm(calc.func.backup)}
         calc.func <- CalcBounds2(traces, e, tau[p], delta[p], only.bounds.est = only.bounds.est, parallel.sapply = parallel.sapply)
       }
 
       res[3:5,p] <- calc.func(obs[p],lower.tail)
+
+      if(any(is.na(res[3:5,p]))){
+
+        if(!exists("calc.func.backup")){
+          calc.func.backup <- CalcBounds2(traces, e,
+                                          tau[if(one.inflation.setting){1}else{p}],
+                                          delta[if(one.inflation.setting){1}else{p}],
+                                          only.point.est = TRUE, parallel.sapply = parallel.sapply)
+        }
+      res[3:5,p] <- calc.func.backup(obs[p],lower.tail)
+
+      }
+
 
       if(!is.null(other.test.res)){
         bound.est <- fishv(c(other.test.res[[p]],res[ if(lower.tail){3}else{4}, p ]))
@@ -163,7 +178,9 @@ CalcBounds <- function(f = function(k,args){eigs_sym(args[[1]],k)},
         bound.est <- res[ if(lower.tail){3}else{4}, p ]
       }
 
-      if(bound.est  < neg.log10.cutoff ){
+      if(is.na(bound.est)){
+        unfinished[p] <- FALSE # if we're still getting a NA for the bound, just exit here for now.
+      } else if(bound.est  < neg.log10.cutoff ){
         res[1,p] <- 0
         unfinished[p] <- FALSE
       }
