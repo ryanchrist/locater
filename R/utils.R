@@ -159,7 +159,11 @@ CalcBounds <- function(f = function(k,args){eigs_sym(args[[1]],k)},
 
       res[3:5,p] <- calc.func(obs[p],lower.tail)
 
-      if(any(is.na(res[3:5,p]))){
+
+      if(
+        if(only.bounds.est){any(is.na(res[3:4,p]))}else{any(is.na(res[3:5,p]))}
+        # if only.bounds.est, then res[5,p] will always be NA!
+        ){
 
         if(!exists("calc.func.backup")){
           calc.func.backup <- CalcBounds2(traces, e,
