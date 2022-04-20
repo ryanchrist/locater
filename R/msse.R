@@ -80,36 +80,38 @@ msse.test <- function(x,y,z, test.1.solo = TRUE){
   if(!is.vector(x) || !is.vector(y) || !is.vector(z) || length(x)!=length(y) || length(x)!=length(z)){
     stop("x,y,z must all be vectors of equal length")}
 
-  if(any(x>1 | x<0 | y>1 | y<0 | z>1 | z<0)){
-    stop("all entries of x, y, z must be in [0,1]")}
-
   x <- -log(x)
   y <- -log(y)
   z <- -log(z)
 
+  to.exclude <- which(!is.finite(x) | !is.finite(y) | !is.finite(z))
+
+  if(length(to.exclude) == length(x)){return(rep(NA_real_,length(x)))}
+
+  if(length(to.exclude)){
+    res <- rep(NA_real_,length(x))
+    x <- x[-to.exclude]
+    y <- y[-to.exclude]
+    z <- z[-to.exclude]
+  }
+
   tm <- pmax(-pgamma(x+y,shape = 2,lower.tail = FALSE,log.p = TRUE),
-                -pgamma(x+z,shape = 2,lower.tail = FALSE,log.p = TRUE),
-                -pgamma(x+y+z,shape = 3,lower.tail = FALSE,log.p = TRUE))
+             -pgamma(x+z,shape = 2,lower.tail = FALSE,log.p = TRUE),
+             -pgamma(x+y+z,shape = 3,lower.tail = FALSE,log.p = TRUE))
 
   if(test.1.solo){
     tm <- pmax(x,tm)
-    mpset_cdf_include1(tm, lower.tail = FALSE)
+    if(length(to.exclude)){
+      res[-to.exclude] <- mpset_cdf_include1(tm, lower.tail = FALSE)
+    } else {
+      res <- mpset_cdf_include1(tm, lower.tail = FALSE)
+    }
   } else {
-    mpset_cdf_exclude1(tm, lower.tail = FALSE)
+    if(length(to.exclude)){
+      res[-to.exclude] <- mpset_cdf_exclude1(tm, lower.tail = FALSE)
+    } else {
+      res <- mpset_cdf_exclude1(tm, lower.tail = FALSE)
+    }
   }
+  res
 }
-# ans <- replicate(5e3,mpse.test(rexp(32)))
-# shapiro.test(qnorm(ans))
-#
-# ans <- rep(0,1e4)
-# for(i in 1:length(ans)){
-#   ans[i] <- mpse.test(rexp(64))
-#   print(i)
-# }
-# F.hat <- ecdf(-log10(ans))
-# tail.est <- function(x){-log10(1-F.hat(x))}
-# xx <- seq(0,5,len=1e3)
-# plot(xx,tail.est(xx),type="l")
-# abline(0,1,lty=2)
-
-
