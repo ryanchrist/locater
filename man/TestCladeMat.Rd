@@ -12,6 +12,7 @@ TestCladeMat(
   other.test.pvalues = NULL,
   point.est = FALSE,
   k = NULL,
+  use.bettermc = FALSE,
   use.forking = FALSE,
   nthreads = 1L
 )

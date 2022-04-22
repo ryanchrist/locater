@@ -117,6 +117,15 @@ CalcBounds <- function(f = function(k,args){eigs_sym(args[[1]],k)},
 
   if(only.point.est){
     e <- f(k[1], args)
+
+    if((length(traces$diag)/length(e$values))*sum(e$values^2) < traces$hsnorm2){
+      # the leading e$values^2 can't sum up to the estimated hsnorm2 -- eigendecomposition is too
+      # unstable and so the QForm test must be dropped for all phenotypes: we exit with all NAs
+      # for the bounds and the point estimate
+      return(rbind(1,k[1],matrix(NA_real_,nrow=3,ncol=length(obs))))
+    }
+
+
     res[2,] <- k[1]
 
     if(one.inflation.setting){  # calculate function only once
@@ -144,6 +153,14 @@ CalcBounds <- function(f = function(k,args){eigs_sym(args[[1]],k)},
     j <- j+1 # advance to next k
     e <- f(k[j], args)
 
+    if((length(traces$diag)/length(e$values))*sum(e$values^2) < traces$hsnorm2){
+      # the leading e$values^2 can't sum up to the estimated hsnorm2 -- eigendecomposition is too
+      # unstable and so the QForm test must be dropped for all phenotypes: we exit with all NAs
+      # for the bounds and the point estimate
+      return(rbind(1,k[j],matrix(NA_real_,nrow=3,ncol=length(obs))))
+    }
+
+
     if(one.inflation.setting){ # calculate function only once
       if(exists("calc.func.backup")){rm(calc.func.backup)}
       calc.func <- CalcBounds2(traces, e, tau[1], delta[1], only.bounds.est = only.bounds.est, parallel.sapply = parallel.sapply)
@@ -159,7 +176,8 @@ CalcBounds <- function(f = function(k,args){eigs_sym(args[[1]],k)},
 
       res[3:5,p] <- calc.func(obs[p],lower.tail)
 
-
+      # THIS SECTION ALLOWS POINT ESTIMATES TO BE USED WHENEVER THE BOUNDS / CALC.FUNC
+      # FAILS -- THE CALC.FUNC.BACKUP FUNCTION BELOW
       if(
         if(only.bounds.est){any(is.na(res[3:4,p]))}else{any(is.na(res[3:5,p]))}
         # if only.bounds.est, then res[5,p] will always be NA!
@@ -234,6 +252,9 @@ CalcBounds2 <- function(traces, e = NULL, tau = 1, delta = 0, only.point.est = F
     })
   }
 
+
+  # IF THE AMOUNT OF VARIANCE LEFT IN THE REMAINDER IS ZERO OR NEGLIGIBLE IN RELATIVE OR ABSOLUTE TERMS,
+  # JUST DROP THE REMAINDER AND USE A POINT ESTIMATE BASED ON THE TOP K EIGENVALUES
   if(length(e$values)==length(traces$diag) ||
      (1 - sum(e$values^2)/traces$hsnorm2) <= sqrt(.Machine$double.eps) ||
      traces$hsnorm2 - sum(e$values^2) <= .Machine$double.eps){
