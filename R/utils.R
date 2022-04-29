@@ -256,8 +256,8 @@ CalcBounds2 <- function(traces, e = NULL, tau = 1, delta = 0, only.point.est = F
   # IF THE AMOUNT OF VARIANCE LEFT IN THE REMAINDER IS ZERO OR NEGLIGIBLE IN RELATIVE OR ABSOLUTE TERMS,
   # JUST DROP THE REMAINDER AND USE A POINT ESTIMATE BASED ON THE TOP K EIGENVALUES
   if(length(e$values)==length(traces$diag) ||
-     (1 - sum(e$values^2)/traces$hsnorm2) <= sqrt(.Machine$double.eps) ||
-     traces$hsnorm2 - sum(e$values^2) <= .Machine$double.eps){
+     (1 - sum(e$values^2)/traces$hsnorm2) <= .Machine$double.eps^.25 ||
+     traces$hsnorm2 - sum(e$values^2) <= sqrt(.Machine$double.eps)){
     # bounds are not needed because either we have all of the eigenvalues or the eigenvalues that
     # are in the remainder are non-zero due to numerical imprecision.
     gauss.tcdf <- QForm::QFGauss(tau * e$values, parallel.sapply = parallel.sapply)
