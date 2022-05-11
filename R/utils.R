@@ -40,7 +40,8 @@ fish <- function(...){
 
 fishv <- function(v){
   # single vector of negative log10 p-values
-  -pgamma(log(10) * sum(v), shape = length(v),lower.tail = FALSE, log.p = T)/log(10)
+  to.combine <- is.finite(v)
+  -pgamma(log(10) * sum(v[to.combine]), shape = sum(to.combine),lower.tail = FALSE, log.p = T)/log(10)
 }
 
 
@@ -336,6 +337,149 @@ calc_traces <- function(M, Q, sym.M = FALSE,
   tX <- t((Q %*% (J%*%Q)) - (M %*% Q))
 
   kalis:::CalcTraces(M,tX,t(Q),J,from_recipient,nthreads)
+}
+
+
+
+
+SimpleCalcBounds <- function(y,
+                             matmul,
+                             traces,
+                             min.prop.var = 0.98,
+                             k=c(10,100),
+                             neg.log10.cutoff = NULL, #6
+                             other.test.res = NULL, # -log10 pvalues of other tests w/ list element per observation
+                             lower.tail = FALSE,
+                             parallel.sapply = base::sapply){
+
+  # this function uses the schedule k to evaluate more and more eigenvalues for the implicitly provided matrix until
+  # at least the top min.prop.var of the variance of the matrix is explained.
+  # If a neg.log10.cutoff is given, then bounds are calculated for each k and eigendecomposition is truncated if all of the observed statistics have bounds that exclude them from being
+  # more significant than the provided neg.log10.cutoff.
+  # Motivation behind this approach: we are targeting the full quadratic form as our test statistic -- hence the bounds are exact.  But we typically stop early to get a truncated
+  # estimate of the statistic and just report that p-value.  We ensure that our p-values are well calibrated by computing the truncated test statistic and comparing it to the truncated distribution.
+  # The bounds here are simply a means of conserving compute
+
+  # If any of the bounds are not finite due to some sort of numerical instability, then we simply fall back on evaluating min.prop.var of the variance and returning the point estimates
+
+  obs <- c(colSums(y * matmul(y,1)))
+  n <- nrow(y)
+  k <- sort(unique(c(pmin(k,n-1),n-1))) # so we fall back to complete eigendecomposition if we can't get the min variance required in k
+  f <- function(k,args){RSpectra::eigs_sym(matmul,
+                                           k = k, n = n, args = args,
+                                           opts = list("ncv" = min(n, max( 4*((2*k+1)%/%4+1), 20)) ))}
+
+  res <- matrix(NA_real_,nrow=5,ncol=length(obs))
+  res[1,] <- 1
+
+  unfinished <- rep(TRUE,length(obs))
+  j <- 0
+
+  while(any(unfinished)){
+
+    j <- j+1 # advance to next k
+    e <- f(k[j], 0)
+    res[2,] <- k[j]
+
+    # check if eigendecomposition looks stable
+    if((length(traces$diag)/length(e$values))*sum(e$values^2) < traces$hsnorm2 |
+       abs(traces$trace - sum(e$values)) > min(abs(e$values))*(n-length(e$values))){
+      # the leading e$values^2 can't sum up to the estimated hsnorm2 -- eigendecomposition is too
+      # unstable and so the QForm test must be dropped for all phenotypes: we exit with all NAs
+      # for the bounds and the point estimate
+      return(rbind(1,k[j],matrix(NA_real_,nrow=3,ncol=length(obs))))
+    }
+
+    # if we've obtained min.prop.var or we've hit the max k, return final estimates
+    if(sum(e$values^2)/traces$hsnorm2 >= min.prop.var | j == length(k)){
+      g <- SimpleCalcQFGauss(e,parallel.sapply)
+      res[3,] <- res[4,] <- res[5,] <- g(colSums(e$values * crossprod(e$vectors, y)^2)) # note we don't need to do projection of Q here b/c already baked into e$vectors/values
+      return(res)
+    }
+
+    if(is.null(neg.log10.cutoff)){next}
+
+    # otherwise, calculate bounds
+    calc.func <- SimpleCalcBounds2(traces, e, parallel.sapply)
+    temp.bounds <- calc.func(obs)
+
+    # if any of the bounds are unstable (are not finite, then go back to top of loop for more eigenvalues)
+    if(any(!is.finite(temp.bounds))){next}
+    res[3:4,] <- t(temp.bounds)
+
+    # combine QForm bounds with other test results to obtain upper bounds estimates on significance
+    bound.est <- rep(NA_real_,length(obs))
+    if(!is.null(other.test.res)){
+      for(p in 1:length(obs)){
+        bound.est[p] <- fishv(c(other.test.res[[p]],res[ if(lower.tail){3}else{4}, p ]))
+      }
+    } else {
+      bound.est <- res[if(lower.tail){3}else{4},]
+    }
+
+    for(p in 1:length(obs)){
+      if(!is.na(bound.est[p]) && bound.est[p] < neg.log10.cutoff){
+        unfinished[p] <- FALSE
+      }
+    }
+
+  }
+
+  # first row: still interesting indicator
+  # second row: final k used to calculate this particular bound and point estimate
+  # third row: -log10 lower bound
+  # fourth row: -log10 upper bound
+  # fifth row: -log10 pvalue point estimate
+
+  res
+}
+
+
+SimpleCalcQFGauss <- function(e, parallel.sapply = base::sapply){
+  gauss.tcdf <- QForm::QFGauss(e$values, parallel.sapply = parallel.sapply)
+  return(function(obs, lower.tail = FALSE){-gauss.tcdf(obs, lower.tail = lower.tail, log.p = TRUE)/log(10)})
+}
+
+
+
+SimpleCalcBounds2 <- function(traces,
+                              e,
+                              parallel.sapply = base::sapply){
+
+  # this returns a vectorized function that returns a matrix with two columns:
+  # first column: -log10 lower bound
+  # second column: -log10 upper bound
+
+  # IF THE AMOUNT OF VARIANCE LEFT IN THE REMAINDER IS ZERO OR NEGLIGIBLE IN RELATIVE OR ABSOLUTE TERMS,
+  # JUST DROP THE REMAINDER AND USE A POINT ESTIMATE BASED ON THE TOP K EIGENVALUES
+  if(length(e$values)==length(traces$diag) ||
+     (1 - sum(e$values^2)/traces$hsnorm2) <= .Machine$double.eps^.25 ||
+     traces$hsnorm2 - sum(e$values^2) <= sqrt(.Machine$double.eps)){
+    # bounds are not needed because either we have all of the eigenvalues or the eigenvalues that
+    # are in the remainder are non-zero due to numerical imprecision.
+    f <- SimpleCalcQFGauss(e, parallel.sapply = base::sapply)
+    return(function(obs,lower.tail = FALSE){
+      a <- f(obs, lower.tail)
+      a <- cbind(a,a)
+      colnames(a) <- c("-log10_lower_bound","-log10_upper_bound")
+      a})
+  }
+
+
+  # Calc Required Traces
+  R.max.abs.eta <- min(abs(e$values))
+  R.sum.eta <-  traces$trace - sum(e$values)
+  R.sum.etasq <- traces$hsnorm2 - sum(e$values^2)
+
+  # Bound Function
+  tcdf <- suppressWarnings(QForm::QFGauss(e$values,parallel.sapply = parallel.sapply))
+  bound.func <- QForm::QFGaussBounds(tcdf,"identity", R.max.abs.eta, R.sum.eta, R.sum.etasq)
+
+  function(obs, lower.tail = FALSE){
+    a <- -log10(bound.func(obs)[,1:2 + if(lower.tail){0}else{2}])
+    if(is.vector(a)){a <- matrix(a,1,2)} # to cover case of only one obs
+    colnames(a) <- c("-log10_lower_bound","-log10_upper_bound")
+    a}
 }
 
 
