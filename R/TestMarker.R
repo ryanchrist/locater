@@ -73,3 +73,32 @@ TestCachedMarkers <- function(y, A = NULL, from = 1L, to = kalis::L(), ploidy = 
   as.data.frame(res)
 }
 
+
+# Test showing that TestMarker, TestCachedMarkers and R's native lm all give same result
+# require(locater)
+# require(kalis)
+# target.l <- 10
+# CacheHaplotypes(SmallHaps)
+#
+# p <- 1000
+# A <- matrix(1,nrow=N()/2,1)
+# y <- matrix(rnorm(p*N()/2),ncol = p)
+# temp <- TestCachedMarkers(y,A)
+#
+# g <- t(locater:::Haps2Genotypes(QueryCache(target.l), ploidy = 2L))
+# x <- locater:::FitNull(y,A)
+#
+# # TestMarker and TestCachedMarkers disagree.
+#
+# temp.res <- data.frame("lm" = numeric(p),
+#                        "tm" = -log10(locater:::TestMarker(x,g)$p.value),
+#                        "tcm" = as.numeric(unlist(temp[target.l,])))
+# for(i in 1:p){
+#   ms <- summary(lm(I(y[,i]) ~ g))
+#   temp.res$lm[i] <- -pf(ms$fstatistic[1],ms$fstatistic[2],ms$fstatistic[3],lower.tail = FALSE,log.p = TRUE)/log(10)
+#   print(i)
+# }
+#
+# plot(temp.res$lm,temp.res$tm); abline(0,1)
+# plot(temp.res$lm,temp.res$tcm); abline(0,1)
+

@@ -20,8 +20,8 @@
 TestCladeMat <- function(y, M, Q, traces = NULL,
                          other.test.pvalues = NULL,
                          min.prop.var = 0.98,
-                         k = c(10,100,200,400),
-                         neg.log10.cutoff = 6,
+                         k = c(10,100,200,400,800),
+                         neg.log10.cutoff = NULL,
                          use.bettermc = FALSE, use.forking = FALSE, nthreads = 1L){
 
   # if any of the other.test.pvalues are missing/non.finite, they are just ignored

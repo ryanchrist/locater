@@ -3,8 +3,8 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
                      A = NULL,
                      num.ckpts = 0L,
                      ckpt.first.locus = FALSE,
-                     point.est = FALSE,
                      k = NULL,
+                     neg.log10.cutoff = NULL,
                      verbose = FALSE,
                      use.bettermc = FALSE,
                      use.forking = FALSE, nthreads = 1L){
@@ -110,7 +110,6 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
     g <- t(Haps2Genotypes(QueryCache(target.loci[t]), ploidy = ploidy, method = "additive"))
 
     smt.res <- TestMarker(h0, g)
-    smt.tested.ind <- !all(is.na(smt.res))
 
     sprigs <- Sprigs(r, use.forking = use.forking, nthreads = nthreads)
 
@@ -144,81 +143,34 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
     #   # do matrix multiplication with r and smt.res$Q
     # }
 
-
     start1 <- proc.time()[3]
     qf.res <- TestCladeMat(ro.res$y,r,smt.res$Q, other.test.pvalues = list(smt.res$p.value, ro.res$p.value),
-                           point.est = point.est,
                            k = k,
+                           neg.log10.cutoff = neg.log10.cutoff,
                            use.bettermc = use.bettermc,
                            use.forking = use.forking, nthreads = nthreads)
     if(verbose){print(paste("TestCladeMat at target",length(target.loci) - t + 1L,"took",proc.time()[3] - start1,"seconds."))}
     gc()
 
-    if(point.est){
 
-      res[[t]] <- data.frame("interesting" = qf.res[1,],
-                             "k" = qf.res[2,],
-                             "smt" = -log10(smt.res$p.value),
-                             "ro" = -log10(ro.res$p.value),
-                             "qform" = qf.res[5,])
+    res[[t]] <- data.frame("interesting" = qf.res[1,],
+                           "k" = qf.res[2,],
+                           "smt" = -log10(smt.res$p.value),
+                           "ro" = -log10(ro.res$p.value),
+                           "qform.lower" = qf.res[3,],
+                           "qform.upper" = qf.res[4,],
+                           "qform" = qf.res[5,])
 
-      res[[t]]$fish <- if(smt.tested.ind){
-        if(sprigs.tested.ind){
-          fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform)
-        } else {
-          fish(res[[t]]$smt,res[[t]]$qform)
-        }
-      } else {
-        if(sprigs.tested.ind){
-          fish(res[[t]]$ro,res[[t]]$qform)
-        } else {
-          res[[t]]$qform
-        }
-      }
-
-
-    } else {
-
-      res[[t]] <- data.frame("interesting" = qf.res[1,],
-                             "k" = qf.res[2,],
-                             "smt" = -log10(smt.res$p.value),
-                             "ro" = -log10(ro.res$p.value),
-                             "qform.lower" = qf.res[3,],
-                             "qform.upper" = qf.res[4,])
-
-      res[[t]]$fish.lower <- if(smt.tested.ind){
-        if(sprigs.tested.ind){
-          fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform.lower)
-        } else {
-          fish(res[[t]]$smt,res[[t]]$qform.lower)
-        }
-      } else {
-        if(sprigs.tested.ind){
-          fish(res[[t]]$ro,res[[t]]$qform.lower)
-        } else {
-          res[[t]]$qform.lower
-        }
-      }
-
-      res[[t]]$fish.upper <- if(smt.tested.ind){
-        if(sprigs.tested.ind){
-          fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform.upper)
-        } else {
-          fish(res[[t]]$smt,res[[t]]$qform.upper)
-        }
-      } else {
-        if(sprigs.tested.ind){
-          fish(res[[t]]$ro,res[[t]]$qform.upper)
-        } else {
-          res[[t]]$qform.upper
-        }
-      }
-    }
+    res[[t]]$fish <- fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform, na.rm = TRUE)
+    res[[t]]$fish.lower <- fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform.lower, na.rm = TRUE)
+    res[[t]]$fish.upper <- fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform.upper, na.rm = TRUE)
 
     if(verbose){print(paste(length(target.loci) - t + 1L,"out of",length(target.loci),"loci tested.",proc.time()[3] - start0,"seconds required."))}
   }
 
   if(verbose){print(paste("Testing complete.",proc.time()[3] - initial.start,"seconds required."))}
+
+  names(res) <- as.character(target.loci)
 
   res
 }

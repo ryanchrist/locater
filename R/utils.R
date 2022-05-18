@@ -32,14 +32,20 @@ Haps2Genotypes <- function(haps, # vector or p x N matrix of 1s and 0s
   genotypes # a p x n matrix
 }
 
-fish <- function(...){
-  # vectors of negative log10 p-values
-  tests <- list(...)
-  -pgamma(log(10) * rowSums(do.call(cbind,tests)), shape = length(tests),lower.tail = FALSE, log.p = T)/log(10)
+fish <- function(..., na.rm = FALSE){
+  # input vectors of -log10 p-values and output single vector of -log10 p-values
+  # if all entries in a row of tests are NA, 0 will be returned for those rows
+  tests <- do.call(cbind,list(...))
+  if(na.rm){
+    na.tests <- is.na(tests)
+    tests[na.tests] <- 0
+  }
+  -pgamma(log(10) * rowSums(tests), shape = if(na.rm){ncol(tests) - c(rowSums(na.tests))}else{ncol(tests)},
+          lower.tail = FALSE, log.p = T)/log(10)
 }
 
 fishv <- function(v){
-  # single vector of negative log10 p-values
+  # single vector of negative log10 p-values (automatically ignores any non-finite entries)
   to.combine <- is.finite(v)
   -pgamma(log(10) * sum(v[to.combine]), shape = sum(to.combine),lower.tail = FALSE, log.p = T)/log(10)
 }
