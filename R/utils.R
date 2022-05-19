@@ -358,10 +358,11 @@ SimpleCalcBounds <- function(y,
                              lower.tail = FALSE,
                              parallel.sapply = base::sapply){
 
-  # this function uses the schedule k to evaluate more and more eigenvalues for the implicitly provided matrix until
-  # at least the top min.prop.var of the variance of the matrix is explained.
-  # If a neg.log10.cutoff is given, then bounds are calculated for each k and eigendecomposition is truncated if all of the observed statistics have bounds that exclude them from being
+  # this function uses the schedule k to evaluate more and more eigenvalues for the implicitly provided matrix until either
+  # at least the top min.prop.var of the variance of the matrix is explained or the last k is reached.
+  # If a neg.log10.cutoff is given, then bounds are calculated for each k and further eigendecomposition is stopped if all of the observed statistics have bounds that exclude them from being
   # more significant than the provided neg.log10.cutoff.
+
   # Motivation behind this approach: we are targeting the full quadratic form as our test statistic -- hence the bounds are exact.  But we typically stop early to get a truncated
   # estimate of the statistic and just report that p-value.  We ensure that our p-values are well calibrated by computing the truncated test statistic and comparing it to the truncated distribution.
   # The bounds here are simply a means of conserving compute

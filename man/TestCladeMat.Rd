@@ -10,8 +10,9 @@ TestCladeMat(
   Q,
   traces = NULL,
   other.test.pvalues = NULL,
-  point.est = FALSE,
-  k = NULL,
+  min.prop.var = 0.98,
+  k = c(10, 100, 200, 400, 800),
+  neg.log10.cutoff = NULL,
   use.bettermc = FALSE,
   use.forking = FALSE,
   nthreads = 1L
@@ -25,6 +26,9 @@ TestCladeMat(
 \item{Q}{an orthogonal matrix whose columns span the column space of the background covariates}
 
 \item{traces}{an optional traces argument}
+
+\item{point.est}{a logical, if TRUE evaluate eigenvalues according to schedule k until at least 99% of the variation in M is captured and return the resulting p-value.
+If FALSE (default), stop evaluation of eigenvalues once bounds can rule out that locus is significant}
 }
 \value{
 With with p-values for Clade Testing
