@@ -370,13 +370,12 @@ SimpleCalcBounds <- function(y,
 
   obs <- c(colSums(y * matmul(y,1)))
   n <- nrow(y)
-  k <- sort(unique(c(pmin(k,n-1),n-1))) # so we fall back to complete eigendecomposition if we can't get the min variance required in k
+  k <- sort(unique(c(pmin(k,n-1)))) # so we stop at max k even if we can't get the min variance desired
   f <- function(k,args){RSpectra::eigs_sym(matmul,
                                            k = k, n = n, args = args,
                                            opts = list("ncv" = min(n, max( 4*((2*k+1)%/%4+1), 20)) ))}
 
   res <- matrix(NA_real_,nrow=5,ncol=length(obs))
-  res[1,] <- 1
 
   unfinished <- rep(TRUE,length(obs))
   j <- 0
@@ -386,6 +385,8 @@ SimpleCalcBounds <- function(y,
     j <- j+1 # advance to next k
     e <- f(k[j], 0)
     res[2,] <- k[j]
+
+    res[1,] <- sum(e$values^2)/traces$hsnorm2
 
     # check if eigendecomposition looks stable
     if((length(traces$diag)/length(e$values))*sum(e$values^2) < traces$hsnorm2 |
@@ -431,7 +432,7 @@ SimpleCalcBounds <- function(y,
 
   }
 
-  # first row: still interesting indicator
+  # first row: percent variance captured with final k
   # second row: final k used to calculate this particular bound and point estimate
   # third row: -log10 lower bound
   # fourth row: -log10 upper bound
