@@ -351,7 +351,7 @@ SimpleCalcBounds <- function(y,
                              matmul,
                              traces,
                              min.prop.var = 0.98,
-                             k=c(10,100),
+                             k=c(0),
                              neg.log10.cutoff = NULL, #6
                              other.test.res = NULL, # -log10 pvalues of other tests w/ list element per observation
                              lower.tail = FALSE,
@@ -369,11 +369,27 @@ SimpleCalcBounds <- function(y,
   # If any of the bounds are not finite due to some sort of numerical instability, then we simply fall back on evaluating min.prop.var of the variance and returning the point estimates
 
   obs <- c(colSums(y * matmul(y,1)))
+
+  if(length(k)==1 && k[1] == 0){
+    res <- matrix(NA_real_,nrow=3,ncol=length(obs))
+    res[1,] <- 0
+    res[2,] <- 0L
+    if(traces$hsnorm2 <=0){
+      res[3,] <- NA_real_
+    } else {
+      a0 <- traces$hsnorm2 / traces$trace
+      nu0 <- traces$trace^2 / traces$hsnorm2
+      res[3,] <- -pchisq(obs/a0,df = nu0,lower.tail = FALSE, log.p = TRUE)/log(10)
+    }
+    return(res)
+  }
+
   n <- nrow(y)
   k <- sort(unique(c(pmin(k,n-1)))) # so we stop at max k even if we can't get the min variance desired
   f <- function(k,args){RSpectra::eigs_sym(matmul,
                                            k = k, n = n, args = args,
                                            opts = list("ncv" = min(n, max( 4*((2*k+1)%/%4+1), 20)) ))}
+
 
   res <- matrix(NA_real_,nrow=15,ncol=length(obs))
 

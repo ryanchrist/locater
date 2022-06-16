@@ -159,30 +159,35 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
     if(verbose){print(paste("TestCladeMat at target",length(target.loci) - t + 1L,"took",proc.time()[3] - start1,"seconds."))}
     gc()
 
+    if(length(k)==1 && k[1] == 0){
+      res[[t]] <- data.frame("prop.var" = qf.res[1,],
+                             "k" = qf.res[2,],
+                             "smt" = -log10(smt.res$p.value),
+                             "ro" = -log10(ro.res$p.value),
+                             "sw" = qf.res[3,])
+    } else {
+      res[[t]] <- data.frame("prop.var" = qf.res[1,],
+                             "k" = qf.res[2,],
+                             "smt" = -log10(smt.res$p.value),
+                             "ro" = -log10(ro.res$p.value),
+                             "qform.lower" = qf.res[3,],
+                             "qform.upper" = qf.res[4,],
+                             "qform" = qf.res[5,],
+                             "sw" = qf.res[6,],
+                             "ru4" = qf.res[7,],
+                             "ru16" = qf.res[8,],
+                             "ru64" = qf.res[9,],
+                             "ri4" = qf.res[10,],
+                             "ri16" = qf.res[11,],
+                             "ri64" = qf.res[12,],
+                             "rs4" = qf.res[13,],
+                             "rs16" = qf.res[14,],
+                             "rs64" = qf.res[15,])
 
-    res[[t]] <- data.frame("prop.var" = qf.res[1,],
-                           "k" = qf.res[2,],
-                           "smt" = -log10(smt.res$p.value),
-                           "ro" = -log10(ro.res$p.value),
-                           "qform.lower" = qf.res[3,],
-                           "qform.upper" = qf.res[4,],
-                           "qform" = qf.res[5,],
-                           "sw" = qf.res[6,],
-                           "ru4" = qf.res[7,],
-                           "ru16" = qf.res[8,],
-                           "ru64" = qf.res[9,],
-                           "ri4" = qf.res[10,],
-                           "ri16" = qf.res[11,],
-                           "ri64" = qf.res[12,],
-                           "rs4" = qf.res[13,],
-                           "rs16" = qf.res[14,],
-                           "rs64" = qf.res[15,]
-                           )
-
-    res[[t]]$fish <- fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform, na.rm = TRUE)
-    res[[t]]$fish.lower <- fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform.lower, na.rm = TRUE)
-    res[[t]]$fish.upper <- fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform.upper, na.rm = TRUE)
-
+      res[[t]]$fish <- fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform, na.rm = TRUE)
+      res[[t]]$fish.lower <- fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform.lower, na.rm = TRUE)
+      res[[t]]$fish.upper <- fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform.upper, na.rm = TRUE)
+    }
     if(verbose){print(paste(length(target.loci) - t + 1L,"out of",length(target.loci),"loci tested.",proc.time()[3] - start0,"seconds required."))}
   }
 

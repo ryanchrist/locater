@@ -85,15 +85,10 @@ for(i in 1:2){
 
 usethis::use_data(MSSETestData, overwrite = TRUE, internal = TRUE)
 
-# xxx <- seq(0,10,len=1e3)
-# plot(xxx,-log(1-F.true.max(xxx)),col="blue",type="l",ylim=c(0,10),xlim=c(0,10),bty="n",las=1)
+# xxx <- seq(0,50,len=1e3)
+# plot(xxx,-log(1-F.true.max(xxx)),col="blue",type="l",ylim=c(0,50),xlim=c(0,50),bty="n",las=1)
 # lines(xxx,(a.r + b.r * xxx),col="green")
-# lines(xxx,pmax(xxx - log(5),0),col="red")
-# lines(xxx,
-#       -cdf.hat(xxx,lower.tail = FALSE,log.p = TRUE),
-#       col="darkorange",lty=2,lwd=2)
-# abline(0,1,lty=2)
-# lines(xxx,
-#       -cdf1(xxx,lower.tail = FALSE,log.p = TRUE),
-#       col="forestgreen",lty=2,lwd=2)
+# #lines(xxx,pmax(xxx - log(4),0),col="red")
+# lines(xxx,pmax(xxx - log(3),0),col="red")
+
 
