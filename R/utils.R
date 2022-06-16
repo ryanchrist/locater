@@ -188,7 +188,7 @@ CalcBounds <- function(f = function(k,args){eigs_sym(args[[1]],k)},
       if(
         if(only.bounds.est){any(is.na(res[3:4,p]))}else{any(is.na(res[3:5,p]))}
         # if only.bounds.est, then res[5,p] will always be NA!
-        ){
+      ){
 
         if(!exists("calc.func.backup")){
           calc.func.backup <- CalcBounds2(traces, e,
@@ -196,7 +196,7 @@ CalcBounds <- function(f = function(k,args){eigs_sym(args[[1]],k)},
                                           delta[if(one.inflation.setting){1}else{p}],
                                           only.point.est = TRUE, parallel.sapply = parallel.sapply)
         }
-      res[3:5,p] <- calc.func.backup(obs[p],lower.tail)
+        res[3:5,p] <- calc.func.backup(obs[p],lower.tail)
 
       }
 
@@ -347,7 +347,6 @@ calc_traces <- function(M, Q, sym.M = FALSE,
 
 
 
-
 SimpleCalcBounds <- function(y,
                              matmul,
                              traces,
@@ -376,7 +375,7 @@ SimpleCalcBounds <- function(y,
                                            k = k, n = n, args = args,
                                            opts = list("ncv" = min(n, max( 4*((2*k+1)%/%4+1), 20)) ))}
 
-  res <- matrix(NA_real_,nrow=5,ncol=length(obs))
+  res <- matrix(NA_real_,nrow=15,ncol=length(obs))
 
   unfinished <- rep(TRUE,length(obs))
   j <- 0
@@ -389,19 +388,54 @@ SimpleCalcBounds <- function(y,
 
     res[1,] <- sum(e$values^2)/traces$hsnorm2
 
-    # check if eigendecomposition looks stable
-    if((length(traces$diag)/length(e$values))*sum(e$values^2) < traces$hsnorm2 |
+    # check if traces or eigendecomposition look stable
+    if(traces$hsnorm2 <=0 |
+       (length(traces$diag)/length(e$values))*sum(e$values^2) < traces$hsnorm2 |
        abs(traces$trace - sum(e$values)) > min(abs(e$values))*(n-length(e$values))){
       # the leading e$values^2 can't sum up to the estimated hsnorm2 -- eigendecomposition is too
       # unstable and so the QForm test must be dropped for all phenotypes: we exit with all NAs
       # for the bounds and the point estimate
-      return(rbind(1,k[j],matrix(NA_real_,nrow=3,ncol=length(obs))))
+      return(rbind(1,k[j],matrix(NA_real_,nrow=13,ncol=length(obs))))
     }
 
     # if we've obtained min.prop.var or we've hit the max k, return final estimates
-    if(sum(e$values^2)/traces$hsnorm2 >= min.prop.var | j == length(k)){
-      g <- SimpleCalcQFGauss(e,parallel.sapply)
-      res[3,] <- res[4,] <- res[5,] <- g(colSums(e$values * crossprod(e$vectors, y)^2)) # note we don't need to do projection of Q here b/c already baked into e$vectors/values
+    if(sum(e$values^2)/traces$hsnorm2 >= min.prop.var | j == length(k) | any(e$values <= 0)){
+
+      # subset eigenvalues and eigenvectors so that all negative eigenvalues are removed
+      # and if that's not a constraint, that only the min.prop.var is obtained (to guard against low-rank clade matrices)
+      k.max <- min(match(TRUE,cumsum(e$values^2)/traces$hsnorm2>=.98),match(TRUE,e$values<=0)-1,na.rm = T)
+      if(is.na(k.max)){k.max <- k[j]}
+      e$values <- e$values[1:k.max]
+      e$vectors <- e$vectors[,1:k.max]
+
+      g <- SimpleCalcQFGauss(e$values,parallel.sapply)
+      z2 <- crossprod(e$vectors, y)^2
+      obs.qf <- c(colSums(e$values * z2))
+      res[3,] <- res[4,] <- res[5,] <- g(obs.qf) # note we don't need to do projection of Q here b/c already baked into e$vectors/values
+
+      a0 <- sum(e$values^2) / sum(e$values)
+      nu0 <- sum(e$values)^2 / sum(e$values^2)
+
+      res[6,] <- -pchisq(obs.qf/a0,df = nu0,lower.tail = FALSE, log.p = TRUE)/log(10)
+
+      u <- pchisq(z2,df = 1,lower.tail = FALSE)
+
+      res[7,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 4),function(x){getElement(x,"p.value")}))
+      res[8,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 16),function(x){getElement(x,"p.value")}))
+      res[9,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 64),function(x){getElement(x,"p.value")}))
+
+      w <- e$values
+      w <- floor(w/min(w))
+      res[10,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 4, w = w),function(x){getElement(x,"p.value")}))
+      res[11,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 16, w = w),function(x){getElement(x,"p.value")}))
+      res[12,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 64, w = w),function(x){getElement(x,"p.value")}))
+
+      w <- e$values^2
+      w <- floor(w/min(w))
+      res[13,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 4, w = w),function(x){getElement(x,"p.value")}))
+      res[14,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 16, w = w),function(x){getElement(x,"p.value")}))
+      res[15,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 64, w = w),function(x){getElement(x,"p.value")}))
+
       return(res)
     }
 
@@ -443,8 +477,8 @@ SimpleCalcBounds <- function(y,
 }
 
 
-SimpleCalcQFGauss <- function(e, parallel.sapply = base::sapply){
-  gauss.tcdf <- QForm::QFGauss(e$values, parallel.sapply = parallel.sapply)
+SimpleCalcQFGauss <- function(e.values, parallel.sapply = base::sapply){
+  gauss.tcdf <- QForm::QFGauss(e.values, parallel.sapply = parallel.sapply)
   return(function(obs, lower.tail = FALSE){-gauss.tcdf(obs, lower.tail = lower.tail, log.p = TRUE)/log(10)})
 }
 

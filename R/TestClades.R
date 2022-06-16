@@ -42,11 +42,6 @@ TestCladeMat <- function(y, M, Q, traces = NULL,
 
   traces <- calc_traces(M, Q = Q, nthreads = nthreads)
 
-  if(!traces$hsnorm2){
-    warning("PMP had all zero entries -- perhaps no clades were called.")
-    if(boughs.branches){return(rep(NA_real_,2))}else{return(NA_real_)}
-  }
-
   matmul <- function(x,args){
     x <- x - Q %*% crossprod(Q,x)
     x <- M %*% x

@@ -8,7 +8,7 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
                      verbose = FALSE,
                      use.bettermc = FALSE,
                      use.forking = FALSE,
-                     forking.chunk.size = 100L,
+                     forking.chunk.size = 100L, # forking is a very expensive operation so don't make this too small
                      mc.preschedule = FALSE,
                      nthreads = 1L){
   # return a list with length and names target.idx, each locater testing results
@@ -166,7 +166,18 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
                            "ro" = -log10(ro.res$p.value),
                            "qform.lower" = qf.res[3,],
                            "qform.upper" = qf.res[4,],
-                           "qform" = qf.res[5,])
+                           "qform" = qf.res[5,],
+                           "sw" = qf.res[6,],
+                           "ru4" = qf.res[7,],
+                           "ru16" = qf.res[8,],
+                           "ru64" = qf.res[9,],
+                           "ri4" = qf.res[10,],
+                           "ri16" = qf.res[11,],
+                           "ri64" = qf.res[12,],
+                           "rs4" = qf.res[13,],
+                           "rs16" = qf.res[14,],
+                           "rs64" = qf.res[15,]
+                           )
 
     res[[t]]$fish <- fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform, na.rm = TRUE)
     res[[t]]$fish.lower <- fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform.lower, na.rm = TRUE)

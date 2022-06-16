@@ -20,7 +20,7 @@ FitNull <- function(y, A = NULL){
        "sumsq" = sumsq)
 }
 
-TestMarker <- function(x, g){
+TestMarker <- function(x, g, add.noise = FALSE){
   if(all(g==g[1])){
     return(list("p.value" = rep(NA_real_,ncol(x$y)),
                 "y" = x$y, # iid Gaussians under null
@@ -32,8 +32,12 @@ TestMarker <- function(x, g){
   Q.local <- cbind(g,x$Q)
   temp <- crossprod(Q.local,x$y)
   Z2 <- c(temp[1,])^2
-  y.resids.local <- scale(x$y - Q.local %*% temp, center = FALSE) + c(Q.local %*% crossprod(Q.local,rnorm(n)))
 
+  if(add.noise){
+    y.resids.local <- scale(x$y - Q.local %*% temp, center = FALSE) + c(Q.local %*% crossprod(Q.local,rnorm(n)))
+  } else {
+    y.resids.local <- apply(x$y - Q.local %*% temp,2,function(x){rank2gauss(rank(x,ties.method = "random"))})
+  }
   # use statmod::qresiduals (randomized quantile residuals to extend this to GLMs)
 
   nu <- n-ncol(x$Q)-1
