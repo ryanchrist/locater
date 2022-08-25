@@ -8,11 +8,11 @@ Test MSSE}
 msse.test(x, y, z, test.1.solo = TRUE)
 }
 \arguments{
-\item{x}{vector of p-values}
+\item{x}{vector of -log10 p-values}
 
-\item{y}{vector of p-values}
+\item{y}{vector of -log10 p-values}
 
-\item{z}{vector of p-values}
+\item{z}{vector of -log10 p-values}
 }
 \description{
 MSSE Test

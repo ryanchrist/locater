@@ -22,7 +22,7 @@ TestCladeMat <- function(y, M, Q, traces = NULL,
                          min.prop.var = 0.98,
                          k = c(10,100,200,400,800),
                          neg.log10.cutoff = NULL,
-                         use.bettermc = FALSE, use.forking = FALSE, nthreads = 1L){
+                         use.forking = FALSE, nthreads = 1L){
 
   # if any of the other.test.pvalues are missing/non.finite, they are just ignored
   # when they are combined with the QF bounds to assess whether to continue eigendecomposition
@@ -49,11 +49,7 @@ TestCladeMat <- function(y, M, Q, traces = NULL,
   }
 
   if(use.forking){
-    if(use.bettermc){
-      parallel.sapply <- function(x,FUN,...){unlist(bettermc::mclapply(x,FUN,...,mc.cores = nthreads))}
-    } else {
-      parallel.sapply <- function(x,FUN,...){unlist(parallel::mclapply(x,FUN,...,mc.cores = nthreads))}
-    }
+    parallel.sapply <- function(x,FUN,...){unlist(parallel::mclapply(x,FUN,...,mc.cores = nthreads))}
   } else {
     parallel.sapply <- sapply
   }

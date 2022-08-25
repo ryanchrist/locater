@@ -351,7 +351,7 @@ calc_sprig_phenotypes <- function(y.resids,sprigs,n.unique.sprigs,ploidy){
 
 
 
-test_sprigs <- function(y,sprigs,ploidy = 2L){
+test_sprigs <- function(y,sprigs, k.max, ploidy = 2L){
 
   if(all(is.na(sprigs))){
     return(list("p.value" = NA_real_,
@@ -569,12 +569,12 @@ test_sprigs <- function(y,sprigs,ploidy = 2L){
     r <- ro::renyi(tilde.z)
   }
 
-  outliers.exps <- tail(r$exps,32)
-  if(length(outliers.exps) < 32){
+  outliers.exps <- tail(r$exps,k.max)
+  if(length(outliers.exps) < k.max){
     p_value = NA_real_
   } else {
     p_value <- ro::mpse.test(rev(outliers.exps))
-    r$exps[(r$n - 32 + 1L):r$n] <- rexp(32)
+    r$exps[(r$n - k.max + 1L):r$n] <- rexp(k.max)
   }
 
   star.z <- rep(NA_real_,n.unique.sprigs)
@@ -602,16 +602,15 @@ test_sprigs <- function(y,sprigs,ploidy = 2L){
 }
 
 #' @export
-TestSprigs <- function(y, sprigs, ploidy = 2L, use.bettermc = FALSE, use.forking = FALSE, nthreads = 1L){
+TestSprigs <- function(y, sprigs, k.max = 2^min(max(4,ceiling(log2(sprigs$num.sprigs/100))),7) , ploidy = 2L, use.forking = FALSE, nthreads = 1L){
+
+  if(sprigs$num.sprigs < 64){ # require there to be at least 64 sprigs to run
+    return(list("p.value" = rep(NA_real_,ncol(y)),"y" = y))}
 
   if(use.forking){
-    if(use.bettermc){
-      res <- bettermc::mclapply(as.list(as.data.frame(y)),test_sprigs,sprigs = sprigs, ploidy = ploidy)
-    } else {
-      res <- parallel::mclapply(as.list(as.data.frame(y)),test_sprigs,sprigs = sprigs, ploidy = ploidy)
-    }
+    res <- parallel::mclapply(as.list(as.data.frame(y)),test_sprigs,sprigs = sprigs$assignments, k.max = k.max, ploidy = ploidy)
   } else {
-    res <- apply(y,2,test_sprigs, sprigs = sprigs, ploidy = ploidy, simplify = FALSE)
+    res <- apply(y,2,test_sprigs, sprigs = sprigs$assignments, k.max = k.max, ploidy = ploidy, simplify = FALSE)
   }
 
   list("p.value" = unlist(lapply(res,function(z){getElement(z,"p.value")})),

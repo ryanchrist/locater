@@ -95,3 +95,11 @@ FindTargetVars <- function(map, min.cM = 0.1, from = 1L, to = length(map),
   l <- lapply(long.intervals,FUN = function(x){idx[x] - 1L + divide_interval(map[idx[x]:idx[x+1]],min.cM)})
   sort(Reduce(union,c(l,list(idx))))
 }
+
+#' @export
+which.thresh.middle <- function(x,thresh){
+  # ensures that all possible results are above a given threshold
+  # using quantile here instead of which.max b/c if there are any ties
+  # (possible if some tests are NA), you get the middle rather than first target locus
+  res <- which(x > thresh & x==max(x,na.rm = T))
+  if(length(res)){quantile(res,probs = 0.5,type = 1)} else {NA_integer_}}

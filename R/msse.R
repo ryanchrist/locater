@@ -61,28 +61,32 @@ mpset_cdf_include1 <- function(x, lower.tail = TRUE, log.p = FALSE){
 }
 
 mpset_cdf_exclude1 <- function(x, lower.tail = TRUE, log.p = FALSE){
-  cdf.hat <- QForm:::wrap.QFcdf(MSSETestData[["exclude1"]])
-  k <- MSSETestData[["exclude1"]]$k
-  a.r <- MSSETestData[["exclude1"]]$a.r
-  b.r <- MSSETestData[["exclude1"]]$b.r
+  # cdf.hat <- QForm:::wrap.QFcdf(MSSETestData[["exclude1"]])
+  # k <- MSSETestData[["exclude1"]]$k
+  # a.r <- MSSETestData[["exclude1"]]$a.r
+  # b.r <- MSSETestData[["exclude1"]]$b.r
+  cdf.hat <- QForm:::wrap.QFcdf(MSSETestData[[2]])
+  k <- MSSETestData[[2]]$k
+  a.r <- MSSETestData[[2]]$a.r
+  b.r <- MSSETestData[[2]]$b.r
   internal_mpset(cdf.hat,k,a.r,b.r,x,lower.tail,log.p)
 }
 
 
 #' MSSE Test
 #' Test MSSE
-#' @param x vector of p-values
-#' @param y vector of p-values
-#' @param z vector of p-values
+#' @param x vector of -log10 p-values
+#' @param y vector of -log10 p-values
+#' @param z vector of -log10 p-values
 #' @export
 msse.test <- function(x,y,z, test.1.solo = TRUE){
 
   if(!is.vector(x) || !is.vector(y) || !is.vector(z) || length(x)!=length(y) || length(x)!=length(z)){
     stop("x,y,z must all be vectors of equal length")}
 
-  x <- -log(x)
-  y <- -log(y)
-  z <- -log(z)
+  x <- x * log(10)
+  y <- y * log(10)
+  z <- z * log(10)
 
   to.exclude <- which(!is.finite(x) | !is.finite(y) | !is.finite(z))
 
@@ -102,16 +106,26 @@ msse.test <- function(x,y,z, test.1.solo = TRUE){
   if(test.1.solo){
     tm <- pmax(x,tm)
     if(length(to.exclude)){
-      res[-to.exclude] <- mpset_cdf_include1(tm, lower.tail = FALSE)
+      res[-to.exclude] <- -mpset_cdf_include1(tm, lower.tail = FALSE, log.p = TRUE)/log(10)
     } else {
-      res <- mpset_cdf_include1(tm, lower.tail = FALSE)
+      res <- -mpset_cdf_include1(tm, lower.tail = FALSE, log.p = TRUE)/log(10)
     }
   } else {
     if(length(to.exclude)){
-      res[-to.exclude] <- mpset_cdf_exclude1(tm, lower.tail = FALSE)
+      res[-to.exclude] <- -mpset_cdf_exclude1(tm, lower.tail = FALSE, log.p = TRUE)/log(10)
     } else {
-      res <- mpset_cdf_exclude1(tm, lower.tail = FALSE)
+      res <- -mpset_cdf_exclude1(tm, lower.tail = FALSE, log.p = TRUE)/log(10)
     }
   }
   res
 }
+
+# n <- 1e3
+# x <- rexp(n,log(10))
+# y <- rexp(n,log(10))
+# z <- rexp(n,log(10))
+# t1 <- locater::msse.test(x,y,z,test.1.solo = TRUE)
+# shapiro.test(qnorm(10^-t1))
+# options(error=recover)
+# t2 <- locater::msse.test(x,y,z,test.1.solo = FALSE)
+# shapiro.test(qnorm(10^-t2))

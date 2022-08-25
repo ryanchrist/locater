@@ -29,7 +29,7 @@ for(i in 1:2){
   n <- length(xx)
   fft_cdf <- F.true.max(xx)
 
-  #plot(xx,fft_cdf)
+  #plot(xx,-log1p(-fft_cdf)/log(10),type="l")
 
   # Begin search for extrapolation points
   ########################################

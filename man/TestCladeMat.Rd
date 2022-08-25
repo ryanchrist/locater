@@ -13,7 +13,6 @@ TestCladeMat(
   min.prop.var = 0.98,
   k = c(10, 100, 200, 400, 800),
   neg.log10.cutoff = NULL,
-  use.bettermc = FALSE,
   use.forking = FALSE,
   nthreads = 1L
 )

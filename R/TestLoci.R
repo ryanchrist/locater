@@ -1,78 +1,161 @@
+
+#' @import data.table
+
+make.call.clade <- function(test.opts){
+
+  # Add more input checks for test.opts
+  if(!is.list(test.opts)){
+    stop("test.opts must be a data.frame or a list")}
+  test.opts <- as.data.frame(test.opts)
+
+  # declare default values for all options; must be sorted into the three categories below
+  default.opts <- list(
+    # clade calling options
+    "thresh" = 0.2,
+    "max1var" = FALSE,
+    # pre clade calling options (SMT)
+    "smt.noise" = FALSE,
+    # clade testing options
+    "mixed.sprigs" = TRUE
+  )
+
+  if(!length(test.opts)){test.opts <- as.data.frame(default.opts)}
+
+  if(anyDuplicated(test.opts)){stop("test.opts cannot contain duplicated rows.")}
+
+  # some pre-processing
+  if(length(setdiff(names(test.opts),names(default.opts)))){
+    print("There are some invalid options in test.opts")}
+  # Fill in missing default.opts
+  for(i in 1:length(default.opts)){
+    if(!names(default.opts)[i]%in%names(test.opts)){
+      test.opts[names(default.opts)[i]] = default.opts[[i]] }}
+  # order test.opts as in default.opts and sort by options in that order
+  test.opts <- test.opts[names(default.opts)]
+  test.opts <- test.opts[do.call(order,test.opts),]
+  test.opts["test.config"] <- as.integer(rownames(test.opts))
+  test.opts <- data.table::as.data.table(test.opts)
+
+  call.clade <- list()
+  call.clade.opts <- unique(test.opts[,c("thresh","max1var")])
+
+  for(i in 1:nrow(call.clade.opts)){
+    call.clade[[i]] <- list("opts" = call.clade.opts[i,],
+                            "pre.clade" = list())
+
+    # MUST UPDATE SUBSET TO MATCH clade calling options in default.opts
+    call.temp.opts <- subset(test.opts,
+                             thresh == call.clade.opts$thresh[i] &
+                               max1var == call.clade.opts$max1var[i])
+    pre.clade.opts <- unique(call.temp.opts[,c("smt.noise")])
+
+    for(j in 1:nrow(pre.clade.opts)){
+
+      call.clade[[i]]$pre.clade[[j]] <- list("opts" = pre.clade.opts[j,],
+                                             "test.clade" = list())
+
+      # MUST UPDATE SUBSET TO MATCH pre clade calling options in default.opts
+      pre.temp.opts <- subset(call.temp.opts,
+                              smt.noise == pre.clade.opts$smt.noise[j])
+
+      test.clade.opts <- unique(pre.temp.opts[,c("mixed.sprigs")])
+
+      for(k in 1:nrow(test.clade.opts)){
+        call.clade[[i]]$pre.clade[[j]]$test.clade[[k]] <- list(
+          "opts" = test.clade.opts[k,],
+
+          # MUST UPDATE SUBSET TO MATCH test clade options in default.opts
+          "test.config" = subset(pre.temp.opts,
+                         mixed.sprigs == test.clade.opts$mixed.sprigs[k])$test.config)
+      }
+    }
+  }
+  list(test.opts, call.clade)
+}
+
+# test.opts <- data.frame(
+#   "smt.noise" = c(TRUE,FALSE,TRUE,TRUE,FALSE,TRUE,FALSE), # Clade-free testing options (eg: SMT, might be more complex)
+#   "thresh" = c(0.2,0.2,1,0.8,0.4,0.4,1), # Clade calling options
+#   "max1var" = c(rep(TRUE,3),rep(FALSE,4)),
+#   "mixed.sprigs" = c(rep(TRUE,2),rep(FALSE,5)) # Clade testing options
+# )
+#
+# call.clade <- make.call.clade(test.opts)
+
+
+
 #' @export
-TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
-                     A = NULL,
+TestLoci <- function(y, # test phenotypes y
+                     pars, # with HMM parameters pars
+                     target.loci = 1:L(), # at loci target.loci
+                     A = NULL, # with background covariates A
+                     sw.approx = FALSE, # If TRUE, use Satterthwaite Approximation for all QForm tests, critical for screening
+                     test.opts = list(), # testing options, may be a data.frame with more than one setting
+
+                     # Accelerating testing
+                     ############################################
+                     verbose = FALSE, # if TRUE, print them. For future: If a directory as a string rather than TRUE/FALSE directory, write timings to a directory.
                      num.ckpts = 0L,
                      ckpt.first.locus = FALSE,
-                     k = c(10,100),
-                     neg.log10.cutoff = NULL,
-                     verbose = FALSE,
-                     use.bettermc = FALSE,
                      use.forking = FALSE,
-                     forking.chunk.size = 100L, # forking is a very expensive operation so don't make this too small
-                     mc.preschedule = FALSE,
                      nthreads = 1L){
-  # return a list with length and names target.idx, each locater testing results
-
-  initial.start <- proc.time()[3]
 
 
-  # input checks
-  #####################
+  start0 <- proc.time()[3]
+
+  # validate inputs
+  #######################################
   if(!is.matrix(y)){y <- as.matrix(y)}
 
   if(is.null(N())){
-    stop("haplotypes must be cached before running TestHaplotypes, see ?kalis::CacheHaplotypes")
-  }
+    stop("haplotypes must be cached before running TestHaplotypes, see ?kalis::CacheHaplotypes")}
 
   if(!inherits(pars,"kalisParameters")){
-    stop("pars must be a kalisParameters object, use kalis::Parameters to create one")
-  }
+    stop("pars must be a kalisParameters object, use kalis::Parameters to create one")}
 
   if(!is.vector(target.loci) || !all(as.integer(target.loci)==target.loci & target.loci > 0 & target.loci <= L()) || anyDuplicated(target.loci)){
-    stop("target.loci must be a vector of non-duplicated integers in [1,L()], see ?kalis::L")
-  }
+    stop("target.loci must be a vector of non-duplicated integers in [1,L()], see ?kalis::L")}
 
   target.loci <- sort(target.loci)
 
+  # Fit null models to y, validity of A is assessed here as well
+  h0 <- FitNull(y,A)
+  m <- ncol(y)
+
+  if(!is.logical(sw.approx) || length(sw.approx)!=1){stop("sw.approx must be TRUE or FALSE")}
+
+  # Check and arrange testing options for efficient execution
+  #################################################################
+
+  new.test.opts <- make.call.clade(test.opts)
+
+  test.opts <- new.test.opts[[1]]
+  call.clade <- new.test.opts[[2]]
+
+
+  if(!is.logical(verbose) || length(verbose)!=1){stop("verbose must be TRUE or FALSE")}
 
   if(length(num.ckpts)!=1 || as.integer(num.ckpts)!=num.ckpts || num.ckpts < 0){
-    stop("num.ckpts must be a positive integer")
-  }
+    stop("num.ckpts must be a non-negative integer")}
 
-  if(length(ckpt.first.locus)!=1 || !is.logical(ckpt.first.locus) || (ckpt.first.locus & num.ckpts < 2)){
-    stop("ckpt.first.locus must be a logical, if TRUE num.ckpts must be >= 2")
-  }
+  if(!is.logical(ckpt.first.locus) || length(ckpt.first.locus)!=1 || (ckpt.first.locus & num.ckpts < 2)){
+    stop("ckpt.first.locus must be a logical, if TRUE num.ckpts must be > 1")}
 
-  n <- nrow(y)
+  if(!is.logical(use.forking) || length(use.forking)!=1){stop("use.forking must be TRUE or FALSE")}
 
-  # Although we're not sure if data.table::frank is multithreaded,
-  # since kalis::Clades uses it inside a forked call, we take the extra precaution of
-  # setting DTthreads to 1 here.  data.table is supposed to be able to detect when
-  # it's being called inside a forked process and automatically set this to 1,
-  # but while we have this dependency in kalis::Clades, we keep this here as an
-  # extra precaution
-  data.table::setDTthreads(1L)
+  nthreads <- as.integer(nthreads)
+  if(length(nthreads)!=1 || nthreads < 1){stop("nthreads must be a positive integer")}
 
-  # Fit null models to y
-  #######################
 
-  h0 <- FitNull(y,A)
 
-  # Initialize Tables / Iterator
+  # Initialize Tables, Iterator, and M
   ###########################################
-
   if(verbose){print(paste("Initializing tables and checkpoints..."))}
 
   fwd <- MakeForwardTable(pars)
   bck <- MakeBackwardTable(pars)
 
-  if(length(target.loci) == 1){ num.ckpts <- 0L}
-
-  # TODO consider this option of just making the Forward go to the first locus twice if we are trying to iterate over all loci.
-  # if(target.loci[1] == 1){ # what to do with first locus if trying to leave out core marker
-  #   target.loci[1] <- 2
-  # }
-
+  if(length(target.loci) == 1){num.ckpts <- 0L}
 
   if(length(target.loci) > 1 & num.ckpts){ # Use a ForwardIterator
     if(ckpt.first.locus){
@@ -81,119 +164,125 @@ TestLoci <- function(y, pars, target.loci = 1:L(), ploidy = 2L,
       suppressMessages(Iter <- ForwardIterator(pars, num.ckpts - 1, target.loci, fwd.baseline,force.unif = TRUE))# we take away a checkpoint here to store the baseline
     } else {
       suppressMessages(Iter <- ForwardIterator(pars, num.ckpts, target.loci,force.unif = TRUE))# we take away a checkpoint here to store the baseline
-    }
-  }
+    }}
+
+  M <- matrix(0,N()/2,ncol(fwd$alpha)/2)
 
 
-  # Loop Over Loci
+  # Loop over target loci
   ###########################################
-  res <- as.list(rep(NA,length(target.loci)))
+  template.res <- test.opts
+  template.res[,c("num.sprigs","k")] <- NA_integer_
+  template.res[,c("smt", "rd","qform")] <- NA_real_
+  template.res <- tidyr::expand_grid(template.res,"phenotype" = if(is.null(colnames(y))){1:m}else{colnames(y)})
+  res <- replicate(length(target.loci),template.res,simplify = FALSE)
+
   if(verbose){print(paste("Starting loop over target loci..."))}
 
   for(t in length(target.loci):1){
 
-    start0 <- start1 <- proc.time()[3]
+    # Propagate tables
+    ############################
+    start1 <- proc.time()[3]
+
     if(num.ckpts){
       Iter(fwd,pars,target.loci[t],nthreads)
     } else {
       if(fwd$l > target.loci[t]){ResetTable(fwd)}
-      Forward(fwd,pars,target.loci[t],nthreads = nthreads)
-    }
+      Forward(fwd,pars,target.loci[t],nthreads = nthreads)}
     Backward(bck, pars,target.loci[t], nthreads = nthreads)
-    if(verbose){print(paste("Propogating to target",length(target.loci) - t + 1L,"took",proc.time()[3] - start1,"seconds."))}
+    if(verbose){print(paste("Propagating HMM to target",length(target.loci) - t + 1L,"took",signif(proc.time()[3] - start1,digits=3),"seconds."))}
 
-
-    gc()
-
+    # Run tests
+    ############################
     start1 <- proc.time()[3]
-    r <- Clades(fwd, bck, pars, neighbors = TRUE, use.bettermc = use.bettermc, use.forking = use.forking,
-                forking.chunk.size = forking.chunk.size, mc.preschedule = mc.preschedule, nthreads = nthreads)
-    if(verbose){print(paste("Calling clades at target",length(target.loci) - t + 1L,"took",proc.time()[3] - start1,"seconds."))}
-    gc()
 
+    for(i in 1:length(call.clade)){
 
-    start1 <- proc.time()[3]
-    g <- t(Haps2Genotypes(QueryCache(target.loci[t]), ploidy = ploidy, method = "additive"))
+      # Call Clades
+      neigh <- CladeMat(fwd,bck,M,unit.dist = -log(pars$pars$mu),thresh = call.clade[[i]]$opts$thresh, max1var = call.clade[[i]]$opts$max1var, nthreads = nthreads)
+      sprigs <- Sprigs(neigh[[1]])
+      PruneCladeMat(M,neigh,sprigs,prune="singleton.info")
+      PruneCladeMat(M,neigh,sprigs,prune="sprigs")
+      M <- 0.5 * (M + t(M))
 
-    smt.res <- TestMarker(h0, g)
+      pre.clade <- call.clade[[i]]$pre.clade
 
-    sprigs <- Sprigs(r, use.forking = use.forking, nthreads = nthreads)
+      for(j in 1:length(pre.clade)){
 
-    if(length(na.omit(unique(sprigs))) < 32){
-      sprigs.tested.ind <- FALSE
-      ro.res <- list("p.value" = rep(NA_real_,ncol(y)),
-                     "y" = smt.res$y)
-    } else {
-      sprigs.tested.ind <- TRUE
-      ro.res <- TestSprigs(smt.res$y, sprigs,
-                           ploidy = ploidy,
-                           use.bettermc = use.bettermc,
-                           use.forking = use.forking, nthreads = nthreads)
+        # Run Pre-Clade Routine (SMT)
+        g <- t(Haps2Genotypes(QueryCache(target.loci[t]), ploidy = 2L, method = "additive"))
+        smt.res <- TestMarker(h0, g, add.noise = pre.clade[[j]]$opts$smt.noise)
+
+        test.clade <- pre.clade[[j]]$test.clade
+
+        for(k in 1:length(test.clade)){
+
+          # Test Clades: Run Renyi Distillation on Sprigs
+          ro.res <- TestSprigs(smt.res$y, sprigs,
+                               use.forking = use.forking, nthreads = nthreads)
+
+          # Test Clades: Test Quadratic Form
+          qf.res <- TestCladeMat(ro.res$y,
+                                 M, # could pass function rather than M here explicitly
+                                 smt.res$Q,
+                                 other.test.pvalues = list(smt.res$p.value, ro.res$p.value),
+                                 k = if(sw.approx){0}else{c(20,200,2000)},
+                                 use.forking = use.forking,
+                                 nthreads = nthreads)
+
+          # Store results
+          temp <- 1:m + m * (test.clade[[k]]$test.config - 1L)
+          res[[t]][temp,c("num.sprigs","k","smt","rd","qform") ] <-
+            cbind(rep(sprigs$num.sprigs,m),qf.res$k.qform,-log10(smt.res$p.value),-log10(ro.res$p.value),qf.res$qform)
+        }
+      }
     }
-    if(verbose){print(paste("Testing Marker and Sprigs at target",length(target.loci) - t + 1L,"took",proc.time()[3] - start1,"seconds."))}
 
-
-    start1 <- proc.time()[3]
-    r <- CladeMat(r, ploidy = 2L, sprigs.to.prune = if(sprigs.tested.ind){sprigs}else{NULL},
-                  assemble = FALSE, use.bettermc = use.bettermc, use.forking = use.forking, forking.chunk.size = forking.chunk.size,
-                  mc.preschedule = mc.preschedule, nthreads = nthreads)
-    if(verbose){print(paste("Building CladeMat cols at target",length(target.loci) - t + 1L,"took",proc.time()[3] - start1,"seconds."))}
-    gc()
-
-    start1 <- proc.time()[3]
-    r <- do.call(cbind,r)
-    r <- 0.5 * (r + t(r))
-    if(verbose){print(paste("Assembling CladeMat at target",length(target.loci) - t + 1L,"took",proc.time()[3] - start1,"seconds."))}
-    gc()
-
-    # f <- function(x){ matrix multiplication function to pass to TestClades instead of explicit matrix r
-    #   # do matrix multiplication with r and smt.res$Q
-    # }
-
-    start1 <- proc.time()[3]
-    qf.res <- TestCladeMat(ro.res$y,r,smt.res$Q, other.test.pvalues = list(smt.res$p.value, ro.res$p.value),
-                           k = k,
-                           neg.log10.cutoff = neg.log10.cutoff,
-                           use.bettermc = use.bettermc,
-                           use.forking = use.forking, nthreads = nthreads)
-    if(verbose){print(paste("TestCladeMat at target",length(target.loci) - t + 1L,"took",proc.time()[3] - start1,"seconds."))}
-    gc()
-
-    if(length(k)==1 && k[1] == 0){
-      res[[t]] <- data.frame("prop.var" = qf.res[1,],
-                             "k" = qf.res[2,],
-                             "smt" = -log10(smt.res$p.value),
-                             "ro" = -log10(ro.res$p.value),
-                             "sw" = qf.res[3,])
-    } else {
-      res[[t]] <- data.frame("prop.var" = qf.res[1,],
-                             "k" = qf.res[2,],
-                             "smt" = -log10(smt.res$p.value),
-                             "ro" = -log10(ro.res$p.value),
-                             "qform.lower" = qf.res[3,],
-                             "qform.upper" = qf.res[4,],
-                             "qform" = qf.res[5,],
-                             "sw" = qf.res[6,],
-                             "ru4" = qf.res[7,],
-                             "ru16" = qf.res[8,],
-                             "ru64" = qf.res[9,],
-                             "ri4" = qf.res[10,],
-                             "ri16" = qf.res[11,],
-                             "ri64" = qf.res[12,],
-                             "rs4" = qf.res[13,],
-                             "rs16" = qf.res[14,],
-                             "rs64" = qf.res[15,])
-
-      res[[t]]$fish <- fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform, na.rm = TRUE)
-      res[[t]]$fish.lower <- fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform.lower, na.rm = TRUE)
-      res[[t]]$fish.upper <- fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform.upper, na.rm = TRUE)
-    }
-    if(verbose){print(paste(length(target.loci) - t + 1L,"out of",length(target.loci),"loci tested.",proc.time()[3] - start0,"seconds required."))}
+    if(verbose){print(paste("Running tests at target  ",length(target.loci) - t + 1L,"took",signif(proc.time()[3] - start1,digits = 3),"seconds."))}
   }
 
-  if(verbose){print(paste("Testing complete.",proc.time()[3] - initial.start,"seconds required."))}
+  if(verbose){print(paste("Iterating over all",length(target.loci),"target loci took",signif(proc.time()[3] - start0,digits = 3),"seconds."))}
 
+  # merge results across loci
   names(res) <- as.character(target.loci)
+  res <- data.table::rbindlist(res,idcol = "locus.idx")
+  res[,locus.idx:=as.integer(locus.idx)]
+
+  # calculate total locater signal
+  res[,tot:=msse.test(smt,rd,qform,test.1.solo = FALSE)]
 
   res
 }
+
+#
+# if(length(k)==1 && k[1] == 0){
+#   res[[t]] <- data.frame("prop.var" = qf.res[1,],
+#                          "k" = qf.res[2,],
+#                          "smt" = -log10(smt.res$p.value),
+#                          "ro" = -log10(ro.res$p.value),
+#                          "sw" = qf.res[3,])
+# } else {
+#   res[[t]] <- data.frame("prop.var" = qf.res[1,],
+#                          "k" = qf.res[2,],
+#                          "smt" = -log10(smt.res$p.value),
+#                          "ro" = -log10(ro.res$p.value),
+#                          "qform.lower" = qf.res[3,],
+#                          "qform.upper" = qf.res[4,],
+#                          "qform" = qf.res[5,],
+#                          "sw" = qf.res[6,],
+#                          "ru4" = qf.res[7,],
+#                          "ru16" = qf.res[8,],
+#                          "ru64" = qf.res[9,],
+#                          "ri4" = qf.res[10,],
+#                          "ri16" = qf.res[11,],
+#                          "ri64" = qf.res[12,],
+#                          "rs4" = qf.res[13,],
+#                          "rs16" = qf.res[14,],
+#                          "rs64" = qf.res[15,])
+#
+#   res[[t]]$fish <- fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform, na.rm = TRUE)
+#   res[[t]]$fish.lower <- fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform.lower, na.rm = TRUE)
+#   res[[t]]$fish.upper <- fish(res[[t]]$smt,res[[t]]$ro,res[[t]]$qform.upper, na.rm = TRUE)
+# }
+
