@@ -25,7 +25,6 @@ CacheHaplotypes(SmallHaps)
 map <- SmallMap
 
 
-
 # Simulate Phenotypes
 n <- N()/2 # number of samples
 m <- 20 # number of phenotypes
@@ -44,8 +43,8 @@ test.opts <- data.frame(
   "smt.noise" = c(TRUE,TRUE,FALSE,FALSE), # Clade-free testing options (eg: SMT, might be more complex)
   "thresh" = 0.2, # Clade calling options
   "max1var" = c(TRUE,FALSE,TRUE,FALSE),
-  "mixed.sprigs" = TRUE # Clade testing options
-)
+  "max.eigs" = 250L
+  )
 
 
 # Determine target loci based on SMT
@@ -53,7 +52,7 @@ smt.res <- TestCachedMarkers(y, A = A)
 target.loci <- FindTargetVars(map, min.cM = 0.1, initial.targets = smt.res, smt.thresh = 3)
 
 # Run TestLoci with sw.approx = TRUE to do initial screen of target loci
-approx.res <- TestLoci(y, pars, target.loci = target.loci, sw.approx = TRUE, test.opts = test.opts)
+approx.res <- TestLoci(y, pars, target.loci = target.loci, sw.approx = TRUE, test.opts = test.opts,verbose = TRUE)
 
 # Specify a screening threshold: we will revisit variants which have an approximate -log10 p-value greater than screening.thresh
 screening.thresh <- 6
@@ -66,7 +65,7 @@ for(i in 1:length(new.target.loci)){
 new.target.loci <- sort(unique(unlist(new.target.loci)))
 
 # Run TestLoci with sw.approx = FALSE to revisit and exactly evaluate candidate loci
-exact.res <- TestLoci(y, pars, target.loci = new.target.loci, sw.approx = FALSE, test.opts = test.opts)
+exact.res <- TestLoci(y, pars, target.loci = new.target.loci, sw.approx = FALSE, test.opts = test.opts, verbose = TRUE)
 
 # Make Manhattan Plot
 smt.p1 <- smt.res[,1]

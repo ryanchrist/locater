@@ -16,7 +16,7 @@ make.call.clade <- function(test.opts){
     # pre clade calling options (SMT)
     "smt.noise" = FALSE,
     # clade testing options
-    "mixed.sprigs" = TRUE
+    "max.eigs" = 250L
   )
 
   if(!length(test.opts)){test.opts <- as.data.frame(default.opts)}
@@ -25,7 +25,8 @@ make.call.clade <- function(test.opts){
 
   # some pre-processing
   if(length(setdiff(names(test.opts),names(default.opts)))){
-    print("There are some invalid options in test.opts")}
+    stop("There are some invalid options in test.opts")}
+
   # Fill in missing default.opts
   for(i in 1:length(default.opts)){
     if(!names(default.opts)[i]%in%names(test.opts)){
@@ -58,7 +59,7 @@ make.call.clade <- function(test.opts){
       pre.temp.opts <- subset(call.temp.opts,
                               smt.noise == pre.clade.opts$smt.noise[j])
 
-      test.clade.opts <- unique(pre.temp.opts[,c("mixed.sprigs")])
+      test.clade.opts <- unique(pre.temp.opts[,c("max.eigs")])
 
       for(k in 1:nrow(test.clade.opts)){
         call.clade[[i]]$pre.clade[[j]]$test.clade[[k]] <- list(
@@ -66,22 +67,21 @@ make.call.clade <- function(test.opts){
 
           # MUST UPDATE SUBSET TO MATCH test clade options in default.opts
           "test.config" = subset(pre.temp.opts,
-                         mixed.sprigs == test.clade.opts$mixed.sprigs[k])$test.config)
+                         max.eigs == test.clade.opts$max.eigs[k])$test.config)
       }
     }
   }
   list(test.opts, call.clade)
 }
 
-# test.opts <- data.frame(
-#   "smt.noise" = c(TRUE,FALSE,TRUE,TRUE,FALSE,TRUE,FALSE), # Clade-free testing options (eg: SMT, might be more complex)
-#   "thresh" = c(0.2,0.2,1,0.8,0.4,0.4,1), # Clade calling options
-#   "max1var" = c(rep(TRUE,3),rep(FALSE,4)),
-#   "mixed.sprigs" = c(rep(TRUE,2),rep(FALSE,5)) # Clade testing options
-# )
-#
-# call.clade <- make.call.clade(test.opts)
+test.opts <- data.frame(
+  "smt.noise" = c(TRUE,FALSE,TRUE,TRUE,FALSE,TRUE,FALSE), # Clade-free testing options (eg: SMT, might be more complex)
+  "thresh" = c(0.2,0.2,1,0.8,0.4,0.4,1), # Clade calling options
+  "max1var" = c(rep(TRUE,3),rep(FALSE,4)),
+  "max.eigs" = c(240,200,200,250,100,250,100) # Clade testing options
+)
 
+call.clade <- make.call.clade(test.opts)
 
 
 #' @export
@@ -173,7 +173,7 @@ TestLoci <- function(y, # test phenotypes y
   ###########################################
   template.res <- test.opts
   template.res[,c("num.sprigs","k")] <- NA_integer_
-  template.res[,c("smt", "rd","qform")] <- NA_real_
+  template.res[,c("prop.var","smt", "rd","qform")] <- NA_real_
   template.res <- tidyr::expand_grid(template.res,"phenotype" = if(is.null(colnames(y))){1:m}else{colnames(y)})
   res <- replicate(length(target.loci),template.res,simplify = FALSE)
 
@@ -200,7 +200,10 @@ TestLoci <- function(y, # test phenotypes y
     for(i in 1:length(call.clade)){
 
       # Call Clades
+      start2 <- proc.time()[3]
       neigh <- CladeMat(fwd,bck,M,unit.dist = -log(pars$pars$mu),thresh = call.clade[[i]]$opts$thresh, max1var = call.clade[[i]]$opts$max1var, nthreads = nthreads)
+      if(verbose){print(paste("Calling CladeMat @ target",length(target.loci) - t + 1L,"took",signif(proc.time()[3] - start2,digits=3),"seconds."))}
+
       sprigs <- Sprigs(neigh[[1]])
       PruneCladeMat(M,neigh,sprigs,prune="singleton.info")
       PruneCladeMat(M,neigh,sprigs,prune="sprigs")
@@ -219,22 +222,27 @@ TestLoci <- function(y, # test phenotypes y
         for(k in 1:length(test.clade)){
 
           # Test Clades: Run Renyi Distillation on Sprigs
+          start2 <- proc.time()[3]
           ro.res <- TestSprigs(smt.res$y, sprigs,
                                use.forking = use.forking, nthreads = nthreads)
+          if(verbose){print(paste("Call TestSprigs at target",length(target.loci) - t + 1L,"took",signif(proc.time()[3] - start2,digits = 3),"seconds."))}
 
           # Test Clades: Test Quadratic Form
+          start2 <- proc.time()[3]
           qf.res <- TestCladeMat(ro.res$y,
                                  M, # could pass function rather than M here explicitly
                                  smt.res$Q,
                                  other.test.pvalues = list(smt.res$p.value, ro.res$p.value),
-                                 k = if(sw.approx){0}else{c(20,200,2000)},
+                                 k = if(sw.approx){0}else{test.clade[[k]]$opts$max.eigs}, # 2000 wasn't sufficient to get 98% of var or a negative eigenvalue
                                  use.forking = use.forking,
                                  nthreads = nthreads)
+          if(verbose){print(paste("Run TestCladeMat @ target",length(target.loci) - t + 1L,"took",signif(proc.time()[3] - start2,digits = 3),"seconds."))}
+
 
           # Store results
           temp <- 1:m + m * (test.clade[[k]]$test.config - 1L)
-          res[[t]][temp,c("num.sprigs","k","smt","rd","qform") ] <-
-            cbind(rep(sprigs$num.sprigs,m),qf.res$k.qform,-log10(smt.res$p.value),-log10(ro.res$p.value),qf.res$qform)
+          res[[t]][temp,c("num.sprigs","k","prop.var","smt","rd","qform") ] <-
+            cbind(rep(sprigs$num.sprigs,m),qf.res$k.qform,qf.res$prop.var,-log10(smt.res$p.value),-log10(ro.res$p.value),qf.res$qform)
         }
       }
     }
