@@ -424,9 +424,9 @@ SimpleCalcBounds <- function(y,
       if(is.na(k.max1)){k.max1 <- k[j]}
 
       k.max2 <- match(TRUE,e$values<=0)-1L
+      if(is.na(k.max2)){k.max2 <- k[j]}
       if(k.max2 == 0){ # the first eigenvalue is negative, so we exit with all NAs
         return(res)}
-      if(is.na(k.max2)){k.max2 <- k[j]}
 
       k.max <- min(k.max1,k.max2)
 
