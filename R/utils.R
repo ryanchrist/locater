@@ -420,8 +420,16 @@ SimpleCalcBounds <- function(y,
 
       # subset eigenvalues and eigenvectors so that all negative eigenvalues are removed
       # and if that's not a constraint, that only the min.prop.var is obtained (to guard against low-rank clade matrices)
-      k.max <- min(match(TRUE,cumsum(e$values^2)/traces$hsnorm2>=.98),match(TRUE,e$values<=0)-1,na.rm = T)
-      if(is.na(k.max)){k.max <- k[j]}
+      k.max1 <- match(TRUE,cumsum(e$values^2)/traces$hsnorm2 >= min.prop.var)
+      if(is.na(k.max1)){k.max1 <- k[j]}
+
+      k.max2 <- match(TRUE,e$values<=0)-1L
+      if(k.max2 == 0){ # the first eigenvalue is negative, so we exit with all NAs
+        return(res)}
+      if(is.na(k.max2)){k.max2 <- k[j]}
+
+      k.max <- min(k.max1,k.max2)
+
       e$values <- e$values[1:k.max]
       e$vectors <- e$vectors[,1:k.max]
 
