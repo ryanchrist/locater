@@ -13,6 +13,7 @@ make.call.clade <- function(test.opts){
     # clade calling options
     "thresh" = 0.2,
     "max1var" = FALSE,
+    "old.sprigs" = FALSE,
     # pre clade calling options (SMT)
     "smt.noise" = FALSE,
     # clade testing options
@@ -38,7 +39,7 @@ make.call.clade <- function(test.opts){
   test.opts <- data.table::as.data.table(test.opts)
 
   call.clade <- list()
-  call.clade.opts <- unique(test.opts[,c("thresh","max1var")])
+  call.clade.opts <- unique(test.opts[,c("thresh","max1var","old.sprigs")])
 
   for(i in 1:nrow(call.clade.opts)){
     call.clade[[i]] <- list("opts" = call.clade.opts[i,],
@@ -47,7 +48,8 @@ make.call.clade <- function(test.opts){
     # MUST UPDATE SUBSET TO MATCH clade calling options in default.opts
     call.temp.opts <- subset(test.opts,
                              thresh == call.clade.opts$thresh[i] &
-                               max1var == call.clade.opts$max1var[i])
+                               max1var == call.clade.opts$max1var[i] &
+                               old.sprigs == call.clade.opts$old.sprigs[i])
     pre.clade.opts <- unique(call.temp.opts[,c("smt.noise")])
 
     for(j in 1:nrow(pre.clade.opts)){
@@ -74,14 +76,15 @@ make.call.clade <- function(test.opts){
   list(test.opts, call.clade)
 }
 
-test.opts <- data.frame(
-  "smt.noise" = c(TRUE,FALSE,TRUE,TRUE,FALSE,TRUE,FALSE), # Clade-free testing options (eg: SMT, might be more complex)
-  "thresh" = c(0.2,0.2,1,0.8,0.4,0.4,1), # Clade calling options
-  "max1var" = c(rep(TRUE,3),rep(FALSE,4)),
-  "max.eigs" = c(240,200,200,250,100,250,100) # Clade testing options
-)
-
-call.clade <- make.call.clade(test.opts)
+# test.opts <- data.frame(
+#   "smt.noise" = c(TRUE,FALSE,TRUE,TRUE,FALSE,TRUE,FALSE), # Clade-free testing options (eg: SMT, might be more complex)
+#   "thresh" = c(0.2,0.2,1,0.8,0.4,0.4,1), # Clade calling options
+#   "max1var" = c(rep(TRUE,3),rep(FALSE,4)),
+#   "max.eigs" = c(240,200,200,250,100,250,100), # Clade testing options
+#   "old.sprigs" = c(TRUE,TRUE,TRUE,FALSE,FALSE,FALSE,TRUE)
+# )
+#
+# call.clade <- make.call.clade(test.opts)
 
 
 #' @export
@@ -204,7 +207,7 @@ TestLoci <- function(y, # test phenotypes y
       neigh <- CladeMat(fwd,bck,M,unit.dist = -log(pars$pars$mu),thresh = call.clade[[i]]$opts$thresh, max1var = call.clade[[i]]$opts$max1var, nthreads = nthreads)
       if(verbose){print(paste("Calling CladeMat @ target",length(target.loci) - t + 1L,"took",signif(proc.time()[3] - start2,digits=3),"seconds."))}
 
-      sprigs <- Sprigs(neigh[[1]])
+      sprigs <- Sprigs(neigh[[1]], old.sprigs = call.clade[[i]]$opts$old.sprigs)
       PruneCladeMat(M,neigh,sprigs,prune="singleton.info")
       PruneCladeMat(M,neigh,sprigs,prune="sprigs")
       M <- 0.5 * (M + t(M))
@@ -258,7 +261,7 @@ TestLoci <- function(y, # test phenotypes y
   res[,locus.idx:=as.integer(locus.idx)]
 
   # calculate total locater signal
-  res[,tot:=msse.test(smt,rd,qform,test.1.solo = FALSE)]
+  res[,tot:=msse.test(smt,rd,qform,test.1.solo = TRUE)]
 
   res
 }

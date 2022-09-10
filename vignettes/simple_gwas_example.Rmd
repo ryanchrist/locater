@@ -41,7 +41,8 @@ pars <- Parameters(CalcRho(diff(map),s = 0.001),mu = 1e-16) # specify HMM parame
 # Specify a list of optional arguments to control exactly how locater tests each position. If more than one combination of testing parameters is desired, a data.frame with multiple rows can be given and locater will efficiently evaluate all testing options.
 test.opts <- data.frame(
   "smt.noise" = c(TRUE,TRUE,FALSE,FALSE), # Clade-free testing options (eg: SMT, might be more complex)
-  "thresh" = 0.2, # Clade calling options
+  "thresh" = 0.2, 
+  "old.sprigs" = c(FALSE),# Clade calling options
   "max1var" = c(TRUE,FALSE,TRUE,FALSE),
   "max.eigs" = 250L
   )
