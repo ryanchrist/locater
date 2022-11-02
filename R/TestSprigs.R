@@ -191,11 +191,11 @@ calc_sprig_phenotypes <- function(y.resids,sprigs,n.unique.sprigs,ploidy){
 
   w <- rep(NA_real_,n.unique.sprigs)
   if(length(zero.weighted.sprigs)){
-    r <- renyi(putative.sprig.y[-zero.weighted.sprigs])
+    r <- renyi(putative.sprig.y[-zero.weighted.sprigs]) #
     message(paste("# of ranks in initial Renyi transform was ",length(r$ranks)))
     w[-zero.weighted.sprigs] <- rank2gauss(rank(r$signs * r$ranks))^4
   } else {
-    r <- renyi(putative.sprig.y)
+    r <- renyi(putative.sprig.y) #
     message(paste("# of ranks in initial Renyi transform was ",length(r$ranks)))
     w<- rank2gauss(rank(r$signs * r$ranks))^4
   }
@@ -264,9 +264,9 @@ calc_sprig_phenotypes <- function(y.resids,sprigs,n.unique.sprigs,ploidy){
 
   if(length(zero.weighted.sprigs)){
     temp.exclude.ind <- temp.exclude.ind[-zero.weighted.sprigs]
-    updated.putative.sprig.y[-zero.weighted.sprigs] <- inverse.renyi(r, exclude.idx = which(temp.exclude.ind))
+    updated.putative.sprig.y[-zero.weighted.sprigs] <- inverse.renyi(r, exclude.idx = which(temp.exclude.ind)) #
   } else {
-    updated.putative.sprig.y <- inverse.renyi(r, exclude.idx = which(temp.exclude.ind))
+    updated.putative.sprig.y <- inverse.renyi(r, exclude.idx = which(temp.exclude.ind)) #
   }
 
 
@@ -276,9 +276,9 @@ calc_sprig_phenotypes <- function(y.resids,sprigs,n.unique.sprigs,ploidy){
 
   if(length(zero.weighted.sprigs)){
     temp.exclude.ind <- temp.exclude.ind[-zero.weighted.sprigs]
-    inactive.putative.sprig.y[-zero.weighted.sprigs] <- inverse.renyi(r, exclude.idx = which(temp.exclude.ind))
+    inactive.putative.sprig.y[-zero.weighted.sprigs] <- inverse.renyi(r, exclude.idx = which(temp.exclude.ind)) #
   } else {
-    inactive.putative.sprig.y <- inverse.renyi(r, exclude.idx = which(temp.exclude.ind))
+    inactive.putative.sprig.y <- inverse.renyi(r, exclude.idx = which(temp.exclude.ind)) #
   }
 
   updated.putative.sprig.y <- pmax(updated.putative.sprig.y,inactive.putative.sprig.y,na.rm = TRUE)
@@ -374,15 +374,15 @@ test_sprigs <- function(y,sprigs, k.max, ploidy = 2L){
   n.unique.sprigs <- length(na.omit(unique(sprigs)))
 
 
-  if(ploidy == 1){
-
-    sprigs.to.remove.sizes <- tabulate(sprigs, nbins = n.unique.sprigs)
-    sprig.coefficient <- 1/sqrt(sprigs.to.remove.sizes)
-
-  }
+  # if(ploidy == 1){
+  #
+  #   sprigs.to.remove.sizes <- tabulate(sprigs, nbins = n.unique.sprigs)
+  #   sprig.coefficient <- 1/sqrt(sprigs.to.remove.sizes)
+  #
+  # }
 
   if(ploidy!=2){
-    stop("currently only ploidy = 1 or 2 supported")
+    stop("currently only ploidy = 2 is supported")
   }
 
   ###########################################
@@ -561,28 +561,27 @@ test_sprigs <- function(y,sprigs, k.max, ploidy = 2L){
   tilde.z <- ifelse(active.sprig.ind,renyi.sprig.y,alt.renyi.sprig.y)
 
 
-  outlier.test.points <- 2^(0:6)
-
   if(length(zero.weighted.sprigs)){
-    r <- ro::renyi(tilde.z[-zero.weighted.sprigs])
+    r <- rdistill::renyi(tilde.z[-zero.weighted.sprigs]) #
   } else {
-    r <- ro::renyi(tilde.z)
+    r <- rdistill::renyi(tilde.z) #
   }
 
   outliers.exps <- tail(r$exps,k.max)
+
   if(length(outliers.exps) < k.max){
     p_value = NA_real_
   } else {
-    p_value <- ro::mpse.test(rev(outliers.exps))
+    p_value <- rdistill::mpse.test(rev(outliers.exps))
     r$exps[(r$n - k.max + 1L):r$n] <- rexp(k.max)
   }
 
   star.z <- rep(NA_real_,n.unique.sprigs)
 
   if(length(zero.weighted.sprigs)){
-    star.z[-zero.weighted.sprigs] <- ro::inverse.renyi(r)
+    star.z[-zero.weighted.sprigs] <- rdistill::inverse.renyi(r) #
   } else {
-    star.z <- ro::inverse.renyi(r)
+    star.z <- rdistill::inverse.renyi(r) #
   }
 
   sprig.sd <- ifelse(active.sprig.ind,renyi.sprig.sd,alt.renyi.sprig.sd)

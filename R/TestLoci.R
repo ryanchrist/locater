@@ -180,7 +180,7 @@ TestLoci <- function(y, # test phenotypes y
   template.res <- tidyr::expand_grid(template.res,"phenotype" = if(is.null(colnames(y))){1:m}else{colnames(y)})
   res <- replicate(length(target.loci),template.res,simplify = FALSE)
 
-  if(verbose){print(paste("Starting loop over target loci..."))}
+  if(verbose){print(paste("Starting loop over",length(target.loci),"target loci..."))}
 
   for(t in length(target.loci):1){
 
@@ -250,7 +250,7 @@ TestLoci <- function(y, # test phenotypes y
       }
     }
 
-    if(verbose){print(paste("Running tests at target  ",length(target.loci) - t + 1L,"took",signif(proc.time()[3] - start1,digits = 3),"seconds."))}
+    if(verbose){print(paste("Running tests at target",length(target.loci) - t + 1L,"out of",length(target.loci),"took",signif(proc.time()[3] - start1,digits = 3),"seconds."))}
   }
 
   if(verbose){print(paste("Iterating over all",length(target.loci),"target loci took",signif(proc.time()[3] - start0,digits = 3),"seconds."))}

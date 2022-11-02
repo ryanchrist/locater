@@ -103,3 +103,37 @@ which.thresh.middle <- function(x,thresh){
   # (possible if some tests are NA), you get the middle rather than first target locus
   res <- which(x > thresh & x==max(x,na.rm = T))
   if(length(res)){quantile(res,probs = 0.5,type = 1)} else {NA_integer_}}
+
+
+#' @export
+select.tuning.loci <- function(idx, map, desired.cM.dist = 0.01, tol = 0.1){
+
+  default.return <- list("causal.idx" = NA_integer_, "target.idx" = NA_integer_)
+
+  if(!length(idx)){
+    warning("candidate.causal.idx passed to select.tuning.loci is empty, retuning NAs for causal and target idx")
+    return(default.return)}
+
+  min.dist.from.causal.var <- desired.cM.dist*(1-tol)
+  max.dist.from.causal.var <- desired.cM.dist*(1+tol)
+
+  perm.candidate.causal.idx <- sample(idx)
+
+  for(i in 1:length(idx)){
+    # select causal variant
+    causal.idx <- perm.candidate.causal.idx[i]
+    # select target variant
+    candidate.target.idx <- which(
+      (map[causal.idx]+min.dist.from.causal.var <= map & map[causal.idx]+max.dist.from.causal.var >= map)
+      | (map[causal.idx]-min.dist.from.causal.var >= map & map[causal.idx]-max.dist.from.causal.var <= map ))
+    if(length(candidate.target.idx)){break}}
+
+  if(!length(candidate.target.idx)){
+    warning("no target loci could be found satisfying the desired.cM.dist constraint, adjust tol? retuning NAs for causal and target idx")
+    return(default.return)}
+
+  list("causal.idx" = causal.idx, "target.idx" = sample(candidate.target.idx,1))
+}
+
+
+

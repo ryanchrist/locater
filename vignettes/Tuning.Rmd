@@ -1,0 +1,296 @@
+---
+title: "Tuning"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Tuning}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+set.seed(28)
+
+nthreads <- 8L
+
+library(locater)
+library(kalis)
+library(data.table)
+library(Matrix)
+setDTthreads(1L)
+
+# Load demo haplotypes and recombination map
+#CacheHaplotypes(SmallHaps)
+#map <- SmallMap
+
+CacheHaplotypes("~/Downloads/msprime_haps_0.h5",transpose=T)
+raw.map <- read.table("~/Downloads/map_0.txt")
+pos <- raw.map[,1]
+map <- raw.map[,2]
+
+
+ploidy <- 2L
+n <- N() / ploidy
+
+# set tuning parameters grid we wish to optimize over
+HMM_pars <- as.data.table(expand.grid("neglog10Ne" = c(-2),"neglog10mu" = c(4),
+                                      "eff.num.clades" = NA_real_,
+                                      "num.sprigs" = NA_integer_,
+                                      "rd" = NA_real_,"qform"=NA_real_,"signal" = NA_real_))
+HMM_pars$par_id <- 1:nrow(HMM_pars)
+
+# set number of samples / tuning parameter
+n.reps <- 1
+
+res <- rbindlist(replicate(n.reps,HMM_pars,simplify = FALSE),idcol = "rep")
+
+
+for(i in 1:n.reps){
+  
+  i <- 1 # FIXME
+  
+  # specify options for selecting causal variant and target variant
+  candidate.causal.idx <- seq(floor(L()/2)-20,len=40)
+  tuning.loci <- select.tuning.loci(candidate.causal.idx,
+                                    map, 
+                                    desired.cM.dist = 0.0001,tol = 0.1) 
+  # probably want to increase desired.cM.dist to ~ 0.01 for real problems
+  causal.idx <- tuning.loci$causal.idx
+  target.idx <- tuning.loci$target.idx
+  
+  # For rare var with 3 copies use:
+  causal.idx <- 2845
+  target.idx <- 2757
+  
+  # For a common var with 172 copies use:
+  # causal.idx <- 2865
+  # target.idx <- 2789
+  
+  
+  
+  for(j in 1:nrow(HMM_pars)){
+  
+  j <- 1 # FIXME
+      
+  neglog10Ne <- res$neglog10Ne[j]
+  neglog10mu <- res$neglog10mu[j]
+  thresh <- 0.2
+  
+  # propagate to target locus
+  pars <- Parameters(CalcRho(diff(map),s = 10^(-neglog10Ne)),mu = 10^(-neglog10mu)) # specify HMM parameters
+  fwd <- MakeForwardTable(pars)
+  bck <- MakeBackwardTable(pars)
+  Forward(fwd, pars, target.idx, nthreads = nthreads)
+  Backward(bck, pars, target.idx, nthreads = nthreads)
+  
+  # calculate clade mat and sprigs
+  M <- matrix(0,n,n)
+  neigh <- CladeMat(fwd,bck,M,unit.dist = -log(pars$pars$mu),
+                    thresh = thresh, max1var = FALSE, nthreads = nthreads)
+  eff.num.clades <- neigh[[3]]
+  
+  # a quick snipet to look at the number of clades and sprigs called as a function of thresh.
+  # xxx <-yyy<-zzz <- seq(0.1,1,len=20)
+  # for(i in 1:length(xxx)){
+  # neigh <- CladeMat(fwd,bck,M,unit.dist = -log(pars$pars$mu),
+  #                   thresh = xxx[i], max1var = FALSE, nthreads = nthreads)
+  # est.num.clades <- neigh[[3]]
+  # yyy[i] <- est.num.clades
+  # zzz[i] <- Sprigs(neigh[[1]])$num.sprigs}
+  # plot(xxx,yyy,type="l",las=1,bty="n",xlim=c(0,1),ylim=c(0,300))
+  # lines(xxx,zzz,col="blue")
+  
+  
+  # simulate pseudo-phenotype
+  g <- c(locater:::Haps2Genotypes(QueryCache(loci.idx = causal.idx),ploidy = ploidy))
+  g <- g/sqrt(sum(g^2))
+  y <- rnorm(n)
+  y <- matrix(y + g * (sqrt(80 + 2*log(eff.num.clades)) - sum(y*g)),ncol=1)
+  
+  # call sprigs and prune them out of CladeMat
+  sprigs <- Sprigs(neigh[[1]],old.sprigs = FALSE)
+  PruneCladeMat(M,neigh,sprigs,prune="singleton.info")
+  PruneCladeMat(M,neigh,sprigs,prune="sprigs")
+  M <- 0.5 * (M + t(M))
+  
+  ro.res <- TestSprigs(y, sprigs)
+  qf.res <- TestCladeMat(y = ro.res$y,M = M,Q = matrix(1/sqrt(n),n,1),
+                         #other.test.pvalues = list(smt.res$p.value, ro.res$p.value),
+                         k = 0, 
+                         nthreads = nthreads)
+  
+  # Store results
+  row.idx <- which(res$rep==i & res$par_id==j)
+  res$eff.num.clades[row.idx] <- eff.num.clades
+  res$num.sprigs[row.idx] <- sprigs$num.sprigs
+  res$rd[row.idx] <- -log10(ro.res$p.value)
+  res$qform[row.idx] <- qf.res$qform
+  res$signal[row.idx] <- locater:::fishv(c(-log10(ro.res$p.value),qf.res$qform))
+  print(paste(i,"of",nrow(res),"tuning runs done"))
+  }
+}
+
+smt.res <- TestCachedMarkers(y,A=matrix(1,N()/2,1))
+
+plot(pos,smt.res$V1,las=1,bty="n")
+abline(v=pos[target.idx])
+abline(v=pos[causal.idx],col="red")
+
+# This causal variant is present in 21 copies
+table(QueryCache(causal.idx))
+
+# The largest sprig is 9, so it's QForms' responsibility to try to capture this signal
+table(table(sprigs$assignments))
+
+# Here we see that the two sprigs that are capture some of the causal var signal actually 
+# are only slightly correlated (r ~ 0.3)
+D <- fac2sparse(sprigs$assignments,repr = "C")
+D <- D[,seq(1,N(),by=2)] + D[,seq(2,N(),by=2)]
+all.equal(table(rowSums(D)),table(table(sprigs$assignments)))
+raw_sprig_signals <- locater:::fast_smt(y,as.matrix(D),matrix(1/sqrt(N()/2),N()/2,1))
+hist(10^(-raw_sprig_signals))
+rdistill::renyi.test(10^(-raw_sprig_signals),k = 16)
+
+rdistill
+
+
+
+# Look here: the sprig captures the causal variant and we get a very strong signal 
+# doing Renyi directly....must be a bug in TestSprigs
+which(QueryCache(causal.idx)>0)
+which(sprigs$assignments == which.max(raw_sprig_signals))
+-log10(ro::renyi.test(10^-raw_sprig_signals,k=128)$p.value)
+
+
+D.select <- D[tail(order(raw_sprig_signals),2),]
+cor(D.select[1,],g)
+cor(D.select[2,],g)
+
+
+carriers <- which(g>0)
+sum(M[carriers,carriers]^2)
+
+sum(M[carriers,carriers]^2)*prod(dim(M))/(length(carriers)^2)
+sum(M^2)
+
+g.std <- as.vector(scale(g))
+sum(g.std*(M%*%g.std))
+sum(y*(M%*%y))
+
+
+e <- eigen(M)
+qf.cdf <- QForm::QFGauss(e$values)
+
+-qf.cdf(sum(y*(M%*%y)),lower.tail = FALSE,log.p = TRUE)/log(10)
+
+
+plot(res[neglog10mu==4,median(num.sprigs,na.rm = T),neglog10Ne],type="l",bty="n",las=1,ylab="Median # Sprigs",ylim=c(0,1000))
+lines(res[neglog10mu==10,median(num.sprigs),neglog10Ne],col="blue")
+
+plot(res[neglog10mu==4,median(eff.num.clades),neglog10Ne],type="l",bty="n",las=1,ylab="Median Eff # Clades",ylim=c(0,10000))
+lines(res[neglog10mu==10,median(eff.num.clades),neglog10Ne],col="blue")
+
+
+plot(res[neglog10mu==4, mean(rd),neglog10Ne],type="l",bty="n",las=1,ylab="Mean Signal",ylim=c(0,8))
+lines(res[neglog10mu==10,mean(rd),neglog10Ne],col="blue")
+
+plot(res[neglog10mu==4, mean(qform),neglog10Ne],type="l",bty="n",las=1,ylab="Mean Signal",ylim=c(0,8))
+lines(res[neglog10mu==10,mean(qform),neglog10Ne],col="blue")
+
+
+plot(res[neglog10mu==4, max(rd),neglog10Ne],type="l",bty="n",las=1,ylab="Mean Signal",ylim=c(0,8))
+lines(res[neglog10mu==10,max(rd),neglog10Ne],col="blue")
+
+plot(res[neglog10mu==4, max(qform),neglog10Ne],type="l",bty="n",las=1,ylab="Mean Signal",ylim=c(0,8))
+lines(res[neglog10mu==10,max(qform),neglog10Ne],col="blue")
+
+plot(res[neglog10mu==4, max(signal),neglog10Ne],type="l",bty="n",las=1,ylab="Median Signal",ylim=c(0,10))
+lines(res[neglog10mu==10,max(signal),neglog10Ne],col="blue")
+
+plot(res[neglog10mu==2, median(signal),neglog10Ne],type="l",bty="n",las=1,ylab="Median Signal",ylim=c(0,10))
+lines(res[neglog10mu==4,median(signal),neglog10Ne],col="blue")
+lines(res[neglog10mu==8,median(signal),neglog10Ne],col="red")
+
+
+res[,median(eff.num.clades),par_id]$V1
+
+res[,max(signal),par_id]
+
+
+
+
+
+
+
+
+
+
+
+# Simulate Phenotypes
+n <- N()/2 # number of samples
+m <- 20 # number of phenotypes
+
+y <- matrix(rnorm(n*m),n,m)
+g <- QueryCache(c(204,205,207)) # c(204,205,207) are indices of causal loci
+y[,1] <- y[,1] + colSums((g[,seq(1,N(),2)] + g[,seq(2,N(),2)])*c(150,8,20)/rowSums(g))
+A <- matrix(1,n,1) # background covariate matrix is just an index here
+
+
+# Specify Locater screening parameters 
+pars <- Parameters(CalcRho(diff(map),s = 0.001),mu = 1e-16) # specify HMM parameters
+
+# Specify a list of optional arguments to control exactly how locater tests each position. If more than one combination of testing parameters is desired, a data.frame with multiple rows can be given and locater will efficiently evaluate all testing options.
+test.opts <- data.frame(
+  "smt.noise" = c(TRUE,TRUE,FALSE,FALSE), # Clade-free testing options (eg: SMT, might be more complex)
+  "thresh" = 0.2, 
+  "old.sprigs" = c(FALSE),# Clade calling options
+  "max1var" = c(TRUE,FALSE,TRUE,FALSE),
+  "max.eigs" = 250L
+)
+
+
+# Determine target loci based on SMT
+smt.res <- TestCachedMarkers(y, A = A)
+target.loci <- FindTargetVars(map, min.cM = 0.1, initial.targets = smt.res, smt.thresh = 3)
+
+# Run TestLoci with sw.approx = TRUE to do initial screen of target loci
+approx.res <- TestLoci(y, pars, target.loci = target.loci, sw.approx = TRUE, test.opts = test.opts,verbose = TRUE)
+
+# Specify a screening threshold: we will revisit variants which have an approximate -log10 p-value greater than screening.thresh
+screening.thresh <- 6
+
+# Select set of target loci for follow up
+new.target.loci <- as.list(1:max(approx.res$test.config))
+for(i in 1:length(new.target.loci)){
+  new.target.loci[[i]] <- as.integer(
+    approx.res[test.config==i,locus.idx[which.thresh.middle(tot,screening.thresh)],phenotype]$V1)}
+new.target.loci <- sort(unique(unlist(new.target.loci)))
+
+# Run TestLoci with sw.approx = FALSE to revisit and exactly evaluate candidate loci
+exact.res <- TestLoci(y, pars, target.loci = new.target.loci, sw.approx = FALSE, test.opts = test.opts, verbose = TRUE)
+
+# Make Manhattan Plot
+smt.p1 <- smt.res[,1]
+approx.p1 <- approx.res[phenotype==1 & test.config == 2,c("locus.idx","tot")]
+exact.p1 <- exact.res[phenotype==1 & test.config == 2,c("locus.idx","tot")]
+
+COLORS <- palette.colors(3)
+plot(0,0, type = "n", 
+     ylim=range(pretty(c(0,max(c(smt.p1,approx.p1$tot,exact.p1$tot),na.rm=T)))),
+     xlim = range(map),
+     las=1,bty="n",
+     ylab = "-log10 p-value", xlab = "cM position")
+points(map,smt.p1,col=COLORS[1],pch=20)
+points(map[approx.p1$locus.idx],approx.p1$tot,col=COLORS[2],pch=20)
+points(map[exact.p1$locus.idx],exact.p1$tot,col=COLORS[3],pch=20)
+legend("topleft",legend = c("SMT","Approx Locater","Exact Locater"),
+       fill = COLORS, bty = "n")
+
+
+```
