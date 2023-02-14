@@ -351,7 +351,7 @@ calc_sprig_phenotypes <- function(y.resids,sprigs,n.unique.sprigs,ploidy){
 
 
 
-test_sprigs <- function(y,sprigs, k.max, ploidy = 2L){
+old_test_sprigs <- function(y,sprigs, k.max, ploidy = 2L){
 
   if(all(is.na(sprigs))){
     return(list("p.value" = NA_real_,
@@ -601,7 +601,7 @@ test_sprigs <- function(y,sprigs, k.max, ploidy = 2L){
 }
 
 #' @export
-TestSprigs <- function(y, sprigs, k.max = 2^min(max(4,ceiling(log2(sprigs$num.sprigs/100))),7) , ploidy = 2L, use.forking = FALSE, nthreads = 1L){
+old_TestSprigs <- function(y, sprigs, k.max = 2^min(max(4,ceiling(log2(sprigs$num.sprigs/100))),7) , ploidy = 2L, use.forking = FALSE, nthreads = 1L){
 
   if(sprigs$num.sprigs < 64){ # require there to be at least 64 sprigs to run
     return(list("p.value" = rep(NA_real_,ncol(y)),"y" = y))}
@@ -615,4 +615,166 @@ TestSprigs <- function(y, sprigs, k.max = 2^min(max(4,ceiling(log2(sprigs$num.sp
   list("p.value" = unlist(lapply(res,function(z){getElement(z,"p.value")})),
        "y" = do.call(cbind,lapply(res,function(z){getElement(z,"y")})))
 }
+
+
+design2layer <- function(X, col.idx = NULL){
+
+  if(!inherits(X,"sparseMatrix")){
+    stop("X must be a sparseMatrix from Matrix package, see Matrix::sparseMatrix")}
+
+  if(!is.integer(col.idx)){col.idx <- as.integer(col.idx)}
+  if(!(is.atomic(col.idx) && is.integer(col.idx))){
+    stop("col.idx must be a vector of integers")}
+
+  if(is.null(col.idx)){
+    a.levels <- seq_len(ncol(X))
+  }else{
+    a.levels <- col.idx}
+
+  X <- X[,col.idx]
+  var.total <- Matrix::colSums(X^2)
+
+  X <- X * (Matrix::rowSums(X) == 1)
+  var.assigned <- Matrix::colSums(X^2)
+  prop.var <- var.assigned / var.total
+
+  a <- rep(NA_integer_,nrow(X))
+  X <- Matrix::mat2triplet(X)
+  a[X$i] <- col.idx[X$j]
+
+  list("a" = a,
+       "a.levels" = a.levels,
+       "prop.var" = prop.var,
+       "ortho" = FALSE,
+       "a.anyNA"= anyNA(a))
+}
+
+
+part.clades <- function(x1, x2, p = max(c(max(x1,na.rm=T),max(x2,na.rm=T)),na.rm=T)){
+
+  n <- length(x1)
+  if(length(x2) != n){stop("x1 and x2 must have equal length")}
+
+  x1[is.na(x1)] <- p+1L
+  x2[is.na(x2)] <- p+1L
+
+  # Declare adjacency matrix A between clades
+  # note redundant i,j entries are ignored here
+  A <- Matrix::sparseMatrix(x1,x2,
+                            dims=c(p+1,p+1))
+  A <- A | Matrix::t(A)
+  csA <- Matrix::colSums(A)
+
+  # we set A[p+1,p+1] <- TRUE to simplify our downstream code
+  # this ensures that p+1 clade is always treated as have a homozygous sample and automatically set to the second layer.
+  # even in case there are not samples with homozygous (NA,NA) alleles
+  A[p+1,p+1] <- TRUE
+
+  # now assign each clade to a first or second layer
+  in.first.layer <- rep(FALSE,p+1)
+  assigned <- rep(FALSE,p+1)
+  edge.first.layer <- rep(FALSE,p+1)
+  edge.second.layer <-  rep(FALSE,p+1)
+
+  # Assign all homozygous samples and the p+1 clade to the second layer
+  # (Samples with two NAs for their sprigs (homozygous for the p+1 clade) end up
+  # assigned to second layer along with the p+1 clade.)
+  assigned[Matrix::diag(A)] <- TRUE
+
+  # initialize edge.second.layer
+  edge.second.layer <-  assigned
+
+  # see which samples are hard assigned to the second
+  while(any(!assigned)){
+
+    # if no edge.second.layer assign a high degree clade to the second layer
+    if(!any(edge.second.layer)){
+      temp.idx <- which.max(csA[!assigned])
+      edge.second.layer[!assigned][temp.idx] <- TRUE
+      assigned[!assigned][temp.idx] <- TRUE}
+
+    # Assign any unassigned nodes (clades) that border the edge of the second layer
+    # to be in the first layer
+    edge.first.layer <- !assigned & Matrix::rowSums(A[,edge.second.layer,drop=FALSE]) > 0
+    assigned[edge.first.layer] <- TRUE
+    in.first.layer[edge.first.layer] <- TRUE
+
+    if(any(edge.first.layer)){
+      # Assign any unassigned nodes (clades) that border the edge of the first layer
+      # to be in the second layer
+      edge.second.layer <- !assigned & Matrix::rowSums(A[,edge.first.layer,drop=FALSE]) > 0
+      assigned[edge.second.layer] <- TRUE
+    } else {
+      edge.second.layer <-  rep(FALSE,p+1)
+    }
+  }
+
+  if(!all(assigned)){stop("Error occurred during clade partitioning: not all clades were assigned to layer 1 or layer 2")}
+
+  # Excluding clades with a homozygote carrier and the p+1 clade, (done with !diag(A))
+  # all clades assigned to one layer must have at least one neighbor in the other layer
+  if(!all(Matrix::colSums(A * (!in.first.layer))[in.first.layer & !Matrix::diag(A)] > 0)){
+    stop("Error occurred during clade partitioning: some clade in the 1st layer that needs a neighbor in 2nd layer doesn't have one")}
+  #
+  if(!all(Matrix::colSums(A * (in.first.layer))[!in.first.layer & !Matrix::diag(A)] > 0)){
+    stop("Error occurred during clade partitioning: some clade in the 2nd layer that needs a neighbor in 1st layer doesn't have one")}
+
+  return(in.first.layer[-(p+1)])
+}
+
+
+new_test_sprigs <- function(y, sprigs,...){
+
+  # Set defaults of tuning:
+  # min number of predictors required to run Renyi Distillation at all
+  if(sprigs$num.sprigs < 64){ # require there to be at least 64 sprigs to run
+    return(list("p.value" = rep(NA_real_,ncol(y)),"y" = y))}
+
+  # set function for calculating k based on number of clades in a layer
+  opt.args <- list(...)
+  if(!("k" %in% names(opt.args))){
+    opt.args$k <- function(x){2^pmin(pmax(4,ceiling(log2(x/100))),7)}}
+
+  p <- sprigs$num.sprigs
+  x <- sprigs$assignments
+
+  in.first.layer <- part.clades(x1 = x[seq.int(1,length(x),2)],
+                                x2 = x[seq.int(2,length(x),2)],
+                                p = p)
+
+  # Convert sprig assignments x into a design matrix x for clades (n samples x p predictors)
+  x[is.na(x)] <- p+1L
+  n <- length(x)/2
+  x <- Matrix::sparseMatrix(i = rep(1:n,each=2), j = x, x = 1L, dims=c(n,p+1))
+  x <- x[,-(p+1)]
+
+  layers <- list(design2layer(x,which(in.first.layer)),
+                design2layer(x,which(!in.first.layer)))
+
+  # sort layers so they're tested from largest to smallest
+  layer.sizes <- sapply(layers,function(x){length(x$a.levels)})
+  layers <- layers[order(layer.sizes,decreasing = TRUE)]
+
+
+  if(sprigs$num.sprigs < 64){ # require there to be at least 64 sprigs to run
+    return(list("p.value" = rep(NA_real_,ncol(y)),"y" = y))}
+
+  do.call(rdistill::rdistill, c(list("y"=y,"x"=x,"layers"=layers),opt.args))
+}
+
+#' @export
+TestSprigs <- function(y, sprigs, use.forking = FALSE, ...){
+
+  if(use.forking){
+    res <- parallel::mclapply(as.list(as.data.frame(y)),new_test_sprigs, sprigs = sprigs, ...)
+  } else {
+    res <- apply(y, 2, new_test_sprigs, sprigs = sprigs, ..., simplify = FALSE)
+  }
+
+  list("p.value" = unlist(lapply(res,function(z){getElement(z,"p.value")})),
+       "y" = do.call(cbind,lapply(res,function(z){getElement(z,"y.new")})))
+}
+
+
+
 

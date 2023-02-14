@@ -7,14 +7,12 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r, include = FALSE}
-knitr::opts_chunk$set(
-  collapse = TRUE,
-  comment = "#>"
-)
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r setup}
+
+```{setup, eval = FALSE, echo = FALSE}
 set.seed(28)
 
 nthreads <- 8L
@@ -42,7 +40,7 @@ n <- N() / ploidy
 HMM_pars <- as.data.table(expand.grid("neglog10Ne" = c(-2),"neglog10mu" = c(4),
                                       "eff.num.clades" = NA_real_,
                                       "num.sprigs" = NA_integer_,
-                                      "rd" = NA_real_,"qform"=NA_real_,"signal" = NA_real_))
+                                      "rd" = NA_real_,"qform"=NA_real_,"signal" = NA_real_)))
 HMM_pars$par_id <- 1:nrow(HMM_pars)
 
 # set number of samples / tuning parameter
@@ -53,7 +51,7 @@ res <- rbindlist(replicate(n.reps,HMM_pars,simplify = FALSE),idcol = "rep")
 
 for(i in 1:n.reps){
   
-  i <- 1 # FIXME
+  #i <- 1 # FIXME
   
   # specify options for selecting causal variant and target variant
   candidate.causal.idx <- seq(floor(L()/2)-20,len=40)
@@ -84,7 +82,7 @@ for(i in 1:n.reps){
   
   for(j in 1:nrow(HMM_pars)){
   
-  j <- 1 # FIXME
+  #j <- 1 # FIXME
       
   neglog10Ne <- res$neglog10Ne[j]
   neglog10mu <- res$neglog10mu[j]
@@ -113,7 +111,6 @@ for(i in 1:n.reps){
   # zzz[i] <- Sprigs(neigh[[1]])$num.sprigs}
   # plot(xxx,yyy,type="l",las=1,bty="n",xlim=c(0,1),ylim=c(0,300))
   # lines(xxx,zzz,col="blue")
-  
   
   # simulate pseudo-phenotype
   g <- c(locater:::Haps2Genotypes(QueryCache(loci.idx = causal.idx),ploidy = ploidy))
@@ -151,58 +148,10 @@ smt.res <- TestCachedMarkers(y,A=matrix(1,N()/2,1))
 plot(pos,smt.res$V1,las=1,bty="n")
 abline(v=pos[target.idx])
 abline(v=pos[causal.idx],col="red")
-
-# This causal variant is present in 21 copies
-table(QueryCache(causal.idx))
-
-# The largest sprig is 9, so it's QForms' responsibility to try to capture this signal
-table(table(sprigs$assignments))
-
-# Here we see that the two sprigs that are capture some of the causal var signal actually 
-# are only slightly correlated (r ~ 0.3)
-D <- fac2sparse(sprigs$assignments,repr = "C")
-D <- D[,seq(1,N(),by=2)] + D[,seq(2,N(),by=2)]
-all.equal(table(rowSums(D)),table(table(sprigs$assignments)))
-
-# Let's look at outlier signal we get if we ignore dependence 
-raw_sprig_signals <- locater:::fast_smt(y,as.matrix(D),matrix(1/sqrt(N()/2),N()/2,1))
-hist(10^(-raw_sprig_signals))
-rdistill::renyi.test(10^(-raw_sprig_signals),k = 16)
-
-# find the rows and columns (the sprigs and their samples) that tag the causal var
-which(g > 0)
-which(D[which(D %*% g > 0),]>0,arr.ind = T)
+```
 
 
-
-# Look here: the sprig captures the causal variant and we get a very strong signal 
-# doing Renyi directly....must be a bug in TestSprigs
-which(QueryCache(causal.idx)>0)
-which(sprigs$assignments == which.max(raw_sprig_signals))
--log10(ro::renyi.test(10^-raw_sprig_signals,k=128)$p.value)
-
-
-D.select <- D[tail(order(raw_sprig_signals),2),]
-cor(D.select[1,],g)
-cor(D.select[2,],g)
-
-
-carriers <- which(g>0)
-sum(M[carriers,carriers]^2)
-
-sum(M[carriers,carriers]^2)*prod(dim(M))/(length(carriers)^2)
-sum(M^2)
-
-g.std <- as.vector(scale(g))
-sum(g.std*(M%*%g.std))
-sum(y*(M%*%y))
-
-
-e <- eigen(M)
-qf.cdf <- QForm::QFGauss(e$values)
-
--qf.cdf(sum(y*(M%*%y)),lower.tail = FALSE,log.p = TRUE)/log(10)
-
+```{r plot_res, eval = FALSE}
 
 plot(res[neglog10mu==4,median(num.sprigs,na.rm = T),neglog10Ne],type="l",bty="n",las=1,ylab="Median # Sprigs",ylim=c(0,1000))
 lines(res[neglog10mu==10,median(num.sprigs),neglog10Ne],col="blue")
