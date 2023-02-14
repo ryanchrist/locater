@@ -227,6 +227,7 @@ TestLoci <- function(y, # test phenotypes y
           # Test Clades: Run Renyi Distillation on Sprigs
           start2 <- proc.time()[3]
           ro.res <- TestSprigs(smt.res$y, sprigs,
+                               ortho = TRUE,
                                use.forking = use.forking)
           if(verbose){print(paste("Call TestSprigs at target",length(target.loci) - t + 1L,"took",signif(proc.time()[3] - start2,digits = 3),"seconds."))}
 
