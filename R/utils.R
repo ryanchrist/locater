@@ -351,6 +351,7 @@ SimpleCalcBounds <- function(y,
                              matmul,
                              traces,
                              min.prop.var = 0.98,
+                             var.ratio.goal = 0.9,
                              k=c(0),
                              neg.log10.cutoff = NULL, #6
                              other.test.res = NULL, # -log10 pvalues of other tests w/ list element per observation
@@ -369,7 +370,7 @@ SimpleCalcBounds <- function(y,
   # If any of the bounds are not finite due to some sort of numerical instability, then we simply fall back on evaluating min.prop.var of the variance and returning the point estimates
 
   m <- ncol(y)
-  res <- data.frame("prop.var" = rep(NA_real_,m), "k.qform" = rep(NA_integer_,m), "qform" = rep(NA_real_,m))
+  res <- data.frame("prop.var" = rep(NA_real_,m), "var.ratio" = rep(NA_real_,m), "k.qform" = rep(NA_integer_,m), "qform" = rep(NA_real_,m))
 
   obs <- c(colSums(y * matmul(y,1)))
 
@@ -402,42 +403,71 @@ SimpleCalcBounds <- function(y,
 
     j <- j+1 # advance to next k
     e <- f(k[j], 0)
+    sum_evalues <- sum(e$values)
+    sum_evalues_2 <- sum(e$values^2)
 
-    res$prop.var <- sum(e$values^2)/traces$hsnorm2
+    res$prop.var <- sum_evalues_2/traces$hsnorm2
+    if(k[j]>1){res$var.ratio <- (e$values[k[j]]/e$values[k[j]-1])^2}
     res$k.qform <- k[j]
 
     # check if traces or eigendecomposition look stable
     if(traces$hsnorm2 <=0 |
-       sum(e$values^2)/length(e$values) < traces$hsnorm2/length(traces$diag) |
-       abs(traces$trace - sum(e$values)) > min(abs(e$values))*(n-length(e$values))){
+       sum_evalues_2/length(e$values) < traces$hsnorm2/length(traces$diag) |
+       abs(traces$trace - sum_evalues) > min(abs(e$values))*(n-length(e$values))){
       # the leading e$values^2 can't sum up to the estimated hsnorm2 -- eigendecomposition is too
       # unstable and so the QForm test must be dropped for all phenotypes: we exit with all NAs
-      # for the bounds and the point estimate
       return(res)}
 
     # if we've obtained min.prop.var or we've hit the max k, return final estimates
-    if(sum(e$values^2)/traces$hsnorm2 >= min.prop.var | j == length(k) | any(e$values <= 0)){
+    if(res$var.ratio[1] >= var.ratio.goal | res$prop.var[1] >= min.prop.var | j == length(k)){
 
       # subset eigenvalues and eigenvectors so that all negative eigenvalues are removed
       # and if that's not a constraint, that only the min.prop.var is obtained (to guard against low-rank clade matrices)
-      k.max1 <- match(TRUE,cumsum(e$values^2)/traces$hsnorm2 >= min.prop.var)
-      if(is.na(k.max1)){k.max1 <- k[j]}
+      # k.max1 <- match(TRUE,cumsum(e$values^2)/traces$hsnorm2 >= min.prop.var)
+      # if(is.na(k.max1)){k.max1 <- k[j]}
+      #
+      # k.max2 <- match(TRUE,e$values<=0)-1L
+      # if(is.na(k.max2)){k.max2 <- k[j]}
+      # if(k.max2 == 0){ # the first eigenvalue is negative, so we exit with all NAs
+      #   return(res)}
+      #
+      # k.max <- min(k.max1,k.max2)
 
-      k.max2 <- match(TRUE,e$values<=0)-1L
-      if(is.na(k.max2)){k.max2 <- k[j]}
-      if(k.max2 == 0){ # the first eigenvalue is negative, so we exit with all NAs
-        return(res)}
 
-      k.max <- min(k.max1,k.max2)
 
-      e$values <- e$values[1:k.max]
-      e$vectors <- e$vectors[,1:k.max]
+      # alternative
+      # subset eigenvalues and eigenvectors so that we do not include an eigenvalues with magnitude less
+      # than 10^-12.  This guards again low-rank clade matrices.
+      # k.max <- match(TRUE,abs(e$values) < 1e-12)-1L
+      # if(is.na(k.max)){k.max <- k[j]}
+      # if(k.max == 0){ # the first eigenvalue is below 10^-12, so we exit with all NAs
+      #   return(res)}
+      #
+      #
+      # e$values <- e$values[1:k.max]
+      # e$vectors <- e$vectors[,1:k.max]
+      # sum_evalues <- sum(e$values)
+      # sum_evalues_2 <- sum(e$values^2)
 
-      g <- SimpleCalcQFGauss(e$values,parallel.sapply)
-      z2 <- crossprod(e$vectors, y)^2
-      obs.qf <- c(colSums(e$values * z2))
-      res$qform <- g(obs.qf) # note we don't need to do projection of Q here b/c already baked into e$vectors/values
-#
+
+      if(traces$hsnorm2 > sum_evalues_2){
+      g <- SimpleCalcQFGauss(e$values,
+                             mu.R = traces$trace - sum_evalues,
+                             sigma.R = sqrt(2*(traces$hsnorm2 - sum_evalues_2)),
+                             parallel.sapply)
+      } else {
+        g <- SimpleCalcQFGauss(e$values,
+                               parallel.sapply)
+      }
+
+
+      # z2 <- crossprod(e$vectors, y)^2
+      # obs.qf <- c(colSums(e$values * z2))
+      # res$qform <- g(obs.qf) # note we don't need to do projection of Q here b/c already baked into e$vectors/values
+
+      res$qform <- g(obs)
+
+
 #       a0 <- sum(e$values^2) / sum(e$values)
 #       nu0 <- sum(e$values)^2 / sum(e$values^2)
 #
@@ -463,46 +493,47 @@ SimpleCalcBounds <- function(y,
 
       return(res)
     }
-
-    if(is.null(neg.log10.cutoff)){next}
-
-    # otherwise, calculate bounds
-    calc.func <- SimpleCalcBounds2(traces, e, parallel.sapply)
-    temp.bounds <- calc.func(obs)
-
-    # if any of the bounds are unstable (are not finite, then go back to top of loop for more eigenvalues)
-    if(any(!is.finite(temp.bounds))){next}
-
-    # combine QForm bounds with other test results to obtain upper bounds estimates on significance
-    bound.est <- rep(NA_real_,length(obs))
-    if(!is.null(other.test.res)){
-      for(p in 1:length(obs)){
-        bound.est[p] <- fishv(c(other.test.res[[p]],temp.bounds[p,if(lower.tail){3}else{4}]))
-      }
-    } else {
-      bound.est <- temp.bounds[,if(lower.tail){3}else{4}]
-    }
-
-    for(p in 1:length(obs)){
-      if(!is.na(bound.est[p]) && bound.est[p] < neg.log10.cutoff){
-        unfinished[p] <- FALSE}
-    }
-
   }
 
-  # first row: percent variance captured with final k
-  # second row: final k used to calculate this particular bound and point estimate
-  # third row: -log10 lower bound
-  # fourth row: -log10 upper bound
-  # fifth row: -log10 pvalue point estimate
+    # Code below is for calculating and screening based on iterative bounds and used to be a part of the
+    # for loop above
+    # START
+    ###############
+#
+#     if(is.null(neg.log10.cutoff)){next}
+#
+#     # otherwise, calculate bounds
+#     calc.func <- SimpleCalcBounds2(traces, e, parallel.sapply)
+#     temp.bounds <- calc.func(obs)
+#
+#     # if any of the bounds are unstable (are not finite, then go back to top of loop for more eigenvalues)
+#     if(any(!is.finite(temp.bounds))){next}
+#
+#     # combine QForm bounds with other test results to obtain upper bounds estimates on significance
+#     bound.est <- rep(NA_real_,length(obs))
+#     if(!is.null(other.test.res)){
+#       for(p in 1:length(obs)){
+#         bound.est[p] <- fishv(c(other.test.res[[p]],temp.bounds[p,if(lower.tail){3}else{4}]))
+#       }
+#     } else {
+#       bound.est <- temp.bounds[,if(lower.tail){3}else{4}]
+#     }
+#
+#     for(p in 1:length(obs)){
+#       if(!is.na(bound.est[p]) && bound.est[p] < neg.log10.cutoff){
+#         unfinished[p] <- FALSE}
+#     }
+    #########
+    # END
+    ###############
 
   res
 }
 
 
-SimpleCalcQFGauss <- function(e.values, parallel.sapply = base::sapply){
-  gauss.tcdf <- QForm::QFGauss(e.values, parallel.sapply = parallel.sapply)
-  return(function(obs, lower.tail = FALSE){-gauss.tcdf(obs, lower.tail = lower.tail, log.p = TRUE)/log(10)})
+SimpleCalcQFGauss <- function(e.values, mu.R = 0, sigma.R = 0, parallel.sapply = base::sapply){
+  gauss.tcdf <- QForm::QFGauss(e.values, sigma = sigma.R, parallel.sapply = parallel.sapply)
+  return(function(obs, lower.tail = FALSE){-gauss.tcdf(obs-mu.R, lower.tail = lower.tail, log.p = TRUE)/log(10)})
 }
 
 
@@ -522,7 +553,7 @@ SimpleCalcBounds2 <- function(traces,
      traces$hsnorm2 - sum(e$values^2) <= sqrt(.Machine$double.eps)){
     # bounds are not needed because either we have all of the eigenvalues or the eigenvalues that
     # are in the remainder are non-zero due to numerical imprecision.
-    f <- SimpleCalcQFGauss(e, parallel.sapply = base::sapply)
+    f <- SimpleCalcQFGauss(e$values, parallel.sapply = base::sapply)
     return(function(obs,lower.tail = FALSE){
       a <- f(obs, lower.tail)
       a <- cbind(a,a)

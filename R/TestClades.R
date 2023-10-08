@@ -20,7 +20,8 @@
 TestCladeMat <- function(y, M, Q, traces = NULL,
                          other.test.pvalues = NULL,
                          min.prop.var = 0.98,
-                         k = c(10,100,200,400,800),
+                         var.ratio.goal = 0.9,
+                         k = c(10,40,160,640),
                          neg.log10.cutoff = NULL,
                          use.forking = FALSE, nthreads = 1L){
 
@@ -61,6 +62,7 @@ TestCladeMat <- function(y, M, Q, traces = NULL,
                    matmul,
                    traces,
                    min.prop.var = min.prop.var,
+                   var.ratio.goal = var.ratio.goal,
                    k = k,
                    neg.log10.cutoff = neg.log10.cutoff,
                    other.test.res = other.test.res,
