@@ -548,5 +548,79 @@ SimpleCalcBounds2 <- function(traces,
 }
 
 
+extract_carriers <- function(x,i){
+  if(i == length(x$order)){return(integer())} # i == n indicates i is a leaf
+  i1 <- i2 <- i
+  while(i1 > 0){i1 <- x$merge[i1,1]}
+  while(i2 > 0){i2 <- x$merge[i2,2]}
+  x$order[match(-i1,x$order):match(-i2,x$order)]
+}
 
+make_design_matrix <- function(x,cl,n){
+
+  if(!length(cl)){
+    return(Matrix::sparseMatrix(integer(),integer(),dims = c(n,0)))
+  }
+
+  i_list <- j_list <- as.list(1:length(cl))
+
+  for(k in 1:length(cl)){
+    i_list[[k]] <- extract_carriers(x,cl[k])
+    j_list[[k]] <- rep(k,length(i_list[[k]]))
+  }
+
+  Matrix::sparseMatrix(unlist(i_list),unlist(j_list),dims = c(n,length(cl)))
+}
+
+dist2design <- function(d){
+  n <- length(d$height) + 1L
+  d_height <- d$height
+  d_height[n] <- 0
+  d_merge <- d$merge
+  d_merge[d_merge < 0] <- n
+  d_merge <- rbind(d_merge,n)
+  jumps1 <- d_height - d_height[d_merge[,1]]
+  jumps2 <- d_height - d_height[d_merge[,2]]
+
+  cutoff <- 1
+
+  cl1 <- d_merge[jumps1 >= cutoff,1]
+  cl1 <- cl1[cl1!=n]
+  cl2 <- d_merge[jumps2 >= cutoff,2]
+  cl2 <- cl2[cl2!=n]
+
+  X1 <- make_design_matrix(d,cl1,n)
+  X2 <- make_design_matrix(d,cl2,n)
+  X1 <- X1[seq(1,n,by=2),] + X1[seq(2,n,by=2),]
+  X2 <- X2[seq(1,n,by=2),] + X2[seq(2,n,by=2),]
+
+  cbind(X1,X2)
+}
+
+
+rdd <- function(y,X){
+
+  if(!is.matrix(y)){
+    if(!is.numeric(y)){stop("y must be a numeric vector or a matrix")}
+    y <- matrix(y,ncol=1)
+  }
+  m <- ncol(y)
+  if(!ncol(X)){return(rep(NA_real_,m))}
+  X <- rdistill::std_sparse_matrix(X)
+  p1 <- locater:::ortho_part_clades(X)
+
+  p <- ncol(X)
+
+  k_raw <- 2^floor(log2(p))
+
+  k_filt <- min(ceiling(0.1*p),10)
+
+  rd_log10_pval <- rep(0,m)
+  for(ii in 1:m){
+    rd_log10_pval[ii] <- -log10(rdistill::rdistill(y = y[,ii], x = X, l = p1, scale_col = FALSE,
+                                                   filt_opts = list("method" = "thresh", "t" = qbeta(0.05,k_filt,p-k_filt+1)),
+                                                   test_opts = list("k" = min(32,k_raw)))$gpval_layers)
+  }
+  rd_log10_pval
+}
 

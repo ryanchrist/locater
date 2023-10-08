@@ -1,3 +1,7 @@
+#' Fit Null Linear Model
+#' @param y a n x m matrix of m phenotypes (one phenotype / column)
+#' @param A a n x q matrix of q background covariates
+#'@export
 FitNull <- function(y, A = NULL){
 
   if(!is.matrix(y)){y <- as.matrix(y)}
@@ -20,11 +24,24 @@ FitNull <- function(y, A = NULL){
        "sumsq" = sumsq)
 }
 
+#' Perform SMT
+#' @param x a null model object as returned by \link{FitNull}
+#' @param g a genotype vector
+#' @param add.noise if 'raw' return raw residuals, if FALSE simply rank normalize residuals, if TRUE add structured noise along the subspace spanned by the background covs and genotype so that the residuals are 'full rank': truly from N(0,I), not a curved Gaussian.
+#'@export
 TestMarker <- function(x, g, add.noise = FALSE){
   if(all(g==g[1])){
     return(list("p.value" = rep(NA_real_,ncol(x$y)),
                 "y" = x$y, # iid Gaussians under null
                 "Q" = x$Q))}
+
+  if(is.character(add.noise)){
+    add.noise <- switch(add.noise,
+                        "TRUE" = TRUE,
+                        "FALSE" = FALSE,
+                        "raw" = "raw",
+                        stop("invalid add.noise parameter.  Must be TRUE, FALSE or 'raw' "))
+  }
 
   n <- nrow(x$Q)
   g <- g - x$Q %*% crossprod(x$Q,g)
@@ -33,11 +50,17 @@ TestMarker <- function(x, g, add.noise = FALSE){
   temp <- crossprod(Q.local,x$y)
   Z2 <- c(temp[1,])^2
 
-  if(add.noise){
-    y.resids.local <- scale(x$y - Q.local %*% temp, center = FALSE) + c(Q.local %*% crossprod(Q.local,rnorm(n)))
-  } else {
-    y.resids.local <- apply(x$y - Q.local %*% temp,2,function(x){rank2gauss(rank(x,ties.method = "random"))})
+
+  y.resids.local <- x$y - Q.local %*% temp # just return this if add.noise == "raw"
+
+  if(is.logical(add.noise)){
+    if(add.noise){
+      y.resids.local <- scale(y.resids.local, center = FALSE) + c(Q.local %*% crossprod(Q.local,rnorm(n)))
+    } else {
+      y.resids.local <- apply(y.resids.local,2,function(x){rank2gauss(rank(x,ties.method = "random"))})
+    }
   }
+
   # use statmod::qresiduals (randomized quantile residuals to extend this to GLMs)
 
   nu <- n-ncol(x$Q)-1

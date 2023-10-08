@@ -210,8 +210,10 @@ TestLoci <- function(y, # test phenotypes y
       sprigs <- Sprigs(neigh[[1]], old.sprigs = call.clade[[i]]$opts$old.sprigs)
       PruneCladeMat(M,neigh,sprigs,prune="singleton.info")
       PruneCladeMat(M,neigh,sprigs,prune="sprigs")
-      M <- 0.5 * (M + t(M))
 
+      gc()
+      M <- Matrix::symmpart(M)
+      gc()
       pre.clade <- call.clade[[i]]$pre.clade
 
       for(j in 1:length(pre.clade)){
@@ -228,6 +230,7 @@ TestLoci <- function(y, # test phenotypes y
           start2 <- proc.time()[3]
           ro.res <- TestSprigs(smt.res$y, sprigs,
                                ortho = TRUE,
+                               Q = smt.res$Q,
                                use.forking = use.forking)
           if(verbose){print(paste("Call TestSprigs at target",length(target.loci) - t + 1L,"took",signif(proc.time()[3] - start2,digits = 3),"seconds."))}
 
@@ -239,14 +242,14 @@ TestLoci <- function(y, # test phenotypes y
                                  other.test.pvalues = list(smt.res$p.value, ro.res$p.value),
                                  k = if(sw.approx){0}else{test.clade[[k]]$opts$max.eigs}, # 2000 wasn't sufficient to get 98% of var or a negative eigenvalue
                                  use.forking = use.forking,
-                                 nthreads = nthreads)
+                                 nthreads = 1L)
           if(verbose){print(paste("Run TestCladeMat @ target",length(target.loci) - t + 1L,"took",signif(proc.time()[3] - start2,digits = 3),"seconds."))}
 
 
           # Store results
           temp <- 1:m + m * (test.clade[[k]]$test.config - 1L)
-          res[[t]][temp,c("num.sprigs","k","prop.var","smt","rd","qform") ] <-
-            cbind(rep(sprigs$num.sprigs,m),qf.res$k.qform,qf.res$prop.var,-log10(smt.res$p.value),-log10(ro.res$p.value),qf.res$qform)
+          res[[t]][temp,c("num.sprigs","num.layers","k","prop.var","smt","rd","qform") ] <-
+            cbind(rep(sprigs$num.sprigs,m),ro.res$num.layers,qf.res$k.qform,qf.res$prop.var,-log10(smt.res$p.value),-log10(ro.res$p.value),qf.res$qform)
         }
       }
     }
@@ -266,6 +269,185 @@ TestLoci <- function(y, # test phenotypes y
 
   res
 }
+
+
+
+#' @export
+TestLoci_h <- function(y, # test phenotypes y
+                     pars, # with HMM parameters pars
+                     target.loci = 1:L(), # at loci target.loci
+                     A = NULL, # with background covariates A
+                     sw.approx = FALSE, # If TRUE, use Satterthwaite Approximation for all QForm tests, critical for screening
+                     test.opts = list(), # testing options, may be a data.frame with more than one setting
+
+                     # Accelerating testing
+                     ############################################
+                     verbose = FALSE, # if TRUE, print them. For future: If a directory as a string rather than TRUE/FALSE directory, write timings to a directory.
+                     num.ckpts = 0L,
+                     ckpt.first.locus = FALSE,
+                     use.forking = FALSE,
+                     nthreads = 1L){
+
+
+  start0 <- proc.time()[3]
+
+  # validate inputs
+  #######################################
+  if(!is.matrix(y)){y <- as.matrix(y)}
+
+  if(is.null(N())){
+    stop("haplotypes must be cached before running TestHaplotypes, see ?kalis::CacheHaplotypes")}
+
+  if(!inherits(pars,"kalisParameters")){
+    stop("pars must be a kalisParameters object, use kalis::Parameters to create one")}
+
+  if(!is.vector(target.loci) || !all(as.integer(target.loci)==target.loci & target.loci > 0 & target.loci <= L()) || anyDuplicated(target.loci)){
+    stop("target.loci must be a vector of non-duplicated integers in [1,L()], see ?kalis::L")}
+
+  target.loci <- sort(target.loci)
+
+  # Fit null models to y, validity of A is assessed here as well
+  h0 <- FitNull(y,A)
+  m <- ncol(y)
+
+  if(!is.logical(sw.approx) || length(sw.approx)!=1){stop("sw.approx must be TRUE or FALSE")}
+
+  # Check and arrange testing options for efficient execution
+  #################################################################
+
+  new.test.opts <- make.call.clade(test.opts)
+
+  test.opts <- new.test.opts[[1]]
+  call.clade <- new.test.opts[[2]]
+
+
+  if(!is.logical(verbose) || length(verbose)!=1){stop("verbose must be TRUE or FALSE")}
+
+  if(length(num.ckpts)!=1 || as.integer(num.ckpts)!=num.ckpts || num.ckpts < 0){
+    stop("num.ckpts must be a non-negative integer")}
+
+  if(!is.logical(ckpt.first.locus) || length(ckpt.first.locus)!=1 || (ckpt.first.locus & num.ckpts < 2)){
+    stop("ckpt.first.locus must be a logical, if TRUE num.ckpts must be > 1")}
+
+  if(!is.logical(use.forking) || length(use.forking)!=1){stop("use.forking must be TRUE or FALSE")}
+
+  nthreads <- as.integer(nthreads)
+  if(length(nthreads)!=1 || nthreads < 1){stop("nthreads must be a positive integer")}
+
+
+
+  # Initialize Tables, Iterator, and M
+  ###########################################
+  if(verbose){print(paste("Initializing tables and checkpoints..."))}
+
+  fwd <- MakeForwardTable(pars)
+  bck <- MakeBackwardTable(pars)
+
+  if(length(target.loci) == 1){num.ckpts <- 0L}
+
+  if(length(target.loci) > 1 & num.ckpts){ # Use a ForwardIterator
+    if(ckpt.first.locus){
+      fwd.baseline <- MakeForwardTable(pars)
+      Forward(fwd.baseline,pars,target.loci[1],nthreads)
+      suppressMessages(Iter <- ForwardIterator(pars, num.ckpts - 1, target.loci, fwd.baseline,force.unif = TRUE))# we take away a checkpoint here to store the baseline
+    } else {
+      suppressMessages(Iter <- ForwardIterator(pars, num.ckpts, target.loci,force.unif = TRUE))# we take away a checkpoint here to store the baseline
+    }}
+
+  M <- matrix(0,N(),N()) # FIXME
+
+
+  # Loop over target loci
+  ###########################################
+  template.res <- test.opts
+  #template.res[,c("num.sprigs","k")] <- NA_integer_
+  #template.res[,c("prop.var","smt", "rd","qform")] <- NA_real_
+  template.res <- tidyr::expand_grid(template.res,"phenotype" = if(is.null(colnames(y))){1:m}else{colnames(y)})
+  res <- replicate(length(target.loci),template.res,simplify = FALSE)
+
+  if(verbose){print(paste("Starting loop over",length(target.loci),"target loci..."))}
+
+  for(t in length(target.loci):1){
+
+    # Propagate tables
+    ############################
+    start1 <- proc.time()[3]
+
+    if(num.ckpts){
+      Iter(fwd,pars,target.loci[t],nthreads)
+    } else {
+      if(fwd$l > target.loci[t]){ResetTable(fwd)}
+      Forward(fwd,pars,target.loci[t],nthreads = nthreads)}
+    Backward(bck, pars,target.loci[t], nthreads = nthreads)
+    if(verbose){print(paste("Propagating HMM to target",length(target.loci) - t + 1L,"took",signif(proc.time()[3] - start1,digits=3),"seconds."))}
+
+
+    kalis::DistMat(fwd,bck,type = "minus.min",M,nthreads = nthreads)
+    class(M) <- "matrix"
+
+    start2 <- proc.time()[3]
+    gc()
+    dM <- as.dist(Matrix::symmpart(M))
+    gc()
+    if(verbose){print(paste("Forming dist object @ target",length(target.loci) - t + 1L,"took",signif(proc.time()[3] - start2,digits=3),"seconds."))}
+
+    # Run tests
+    ############################
+    start1 <- proc.time()[3]
+
+    for(i in 1:length(call.clade)){
+
+      # Call Clades
+      start2 <- proc.time()[3]
+
+      d <- .Call(fastcluster:::fastcluster, N(), if(call.clade[[i]]$opts$old.sprigs){3L}else{1L}, dM, NULL)
+      d$height <- d$height/(-log(pars$pars$mu)/2)
+
+      X <-  dist2design(d)
+
+      if(verbose){print(paste("Calling CladeMat @ target",length(target.loci) - t + 1L,"took",signif(proc.time()[3] - start2,digits=3),"seconds."))}
+
+      pre.clade <- call.clade[[i]]$pre.clade
+
+      for(j in 1:length(pre.clade)){
+
+        # Run Pre-Clade Routine (SMT)
+        g <- t(Haps2Genotypes(QueryCache(target.loci[t]), ploidy = 2L, method = "additive"))
+        smt.res <- TestMarker(h0, g, add.noise = pre.clade[[j]]$opts$smt.noise)
+
+        test.clade <- pre.clade[[j]]$test.clade
+
+        for(k in 1:length(test.clade)){
+          ot <- rdd(smt.res$y,X)
+          Xs <- as.vector(summary(Matrix::colSums(X)))
+          temp <- 1:m + m * (test.clade[[k]]$test.config - 1L)
+          res[[t]][temp,c("num.clades","min_clade_size","1Q_clade_size","med_clade_size","mean_clade_size","3Q_clade_size","max_clade_size","smt","rd") ] <-
+            cbind(ncol(X),Xs[1],Xs[2],Xs[3],Xs[4],Xs[5],Xs[6],-log10(smt.res$p.value),ot)
+        }
+      }
+    }
+
+    if(verbose){print(paste("Running tests at target",length(target.loci) - t + 1L,"out of",length(target.loci),"took",signif(proc.time()[3] - start1,digits = 3),"seconds."))}
+  }
+
+  if(verbose){print(paste("Iterating over all",length(target.loci),"target loci took",signif(proc.time()[3] - start0,digits = 3),"seconds."))}
+
+  # merge results across loci
+  names(res) <- as.character(target.loci)
+  res <- data.table::rbindlist(res,idcol = "locus.idx")
+  res[,locus.idx:=as.integer(locus.idx)]
+
+  # calculate total locater signal
+  res[,tot:= -pnorm((qnorm(-log(10)*smt,log.p = TRUE)+qnorm(-log(10)*rd,log.p = TRUE))/sqrt(2),log.p = TRUE)/log(10)]
+
+  res
+}
+
+
+
+
+
+
 
 #
 # if(length(k)==1 && k[1] == 0){

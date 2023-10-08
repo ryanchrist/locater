@@ -15,7 +15,7 @@ knitr::opts_chunk$set(
 ```
 
 ```{r setup, eval = TRUE}
-set.seed(27)
+set.seed(7)
 
 library(locater)
 library(kalis)
@@ -31,7 +31,8 @@ m <- 20 # number of phenotypes
 
 y <- matrix(rnorm(n*m),n,m)
 g <- QueryCache(c(204,205,207)) # c(204,205,207) are indices of causal loci
-y[,1] <- y[,1] + colSums((g[,seq(1,N(),2)] + g[,seq(2,N(),2)])*c(150,8,20)/rowSums(g))
+y[,1] <- y[,1] + colSums((g[,seq(1,N(),2)] + g[,seq(2,N(),2)])*c(150,10,30)#c(150,8,20)
+                         /rowSums(g))
 A <- matrix(1,n,1) # background covariate matrix is just an index here
 
 
@@ -40,10 +41,10 @@ pars <- Parameters(CalcRho(diff(map),s = 0.001),mu = 1e-16) # specify HMM parame
 
 # Specify a list of optional arguments to control exactly how locater tests each position. If more than one combination of testing parameters is desired, a data.frame with multiple rows can be given and locater will efficiently evaluate all testing options.
 test.opts <- data.frame(
-  "smt.noise" = c(TRUE,TRUE,FALSE,FALSE), # Clade-free testing options (eg: SMT, might be more complex)
+  "smt.noise" = c(TRUE,TRUE,FALSE,FALSE,"raw"), # Clade-free testing options (eg: SMT, might be more complex)
   "thresh" = 0.2, 
   "old.sprigs" = c(FALSE),# Clade calling options
-  "max1var" = c(TRUE,FALSE,TRUE,FALSE),
+  "max1var" = c(TRUE,FALSE,TRUE,FALSE,TRUE),
   "max.eigs" = 250L
   )
 

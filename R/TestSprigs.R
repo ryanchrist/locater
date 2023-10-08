@@ -626,27 +626,24 @@ design2layer <- function(X, col.idx = NULL){
   if(!(is.atomic(col.idx) && is.integer(col.idx))){
     stop("col.idx must be a vector of integers")}
 
-  if(is.null(col.idx)){
-    a.levels <- seq_len(ncol(X))
-  }else{
-    a.levels <- col.idx}
+  # if(is.null(col.idx)){
+  #   a.levels <- seq_len(ncol(X))
+  # }else{
+  #   a.levels <- col.idx}
 
+  p <- ncol(X)
   X <- X[,col.idx]
-  var.total <- Matrix::colSums(X^2)
+  #var.total <- Matrix::colSums(X^2)
 
   X <- X * (Matrix::rowSums(X) == 1)
-  var.assigned <- Matrix::colSums(X^2)
-  prop.var <- var.assigned / var.total
+  #var.assigned <- Matrix::colSums(X^2)
+  #prop.var <- var.assigned / var.total
 
   a <- rep(NA_integer_,nrow(X))
   X <- Matrix::mat2triplet(X)
   a[X$i] <- col.idx[X$j]
 
-  list("a" = a,
-       "a.levels" = a.levels,
-       "prop.var" = prop.var,
-       "ortho" = FALSE,
-       "a.anyNA"= anyNA(a))
+  rdistill::rdlayer(a = a,p = p,ortho = FALSE)
 }
 
 
@@ -779,12 +776,28 @@ ortho_part_clades <- function(X){
 # layers <- ortho_part_clades(X)
 
 
-new_test_sprigs <- function(y, sprigs, ortho = FALSE, ...){
+new_test_sprigs <- function(y, x, layers, sprigs, ortho = FALSE, ...){
 
+  k <- function(x){2^pmin(pmax(4,ceiling(log2(x/100))),7)}
+
+  if(ortho){
+    rdistill::rdistill(y = y, x = x, l = layers,
+                       filt_opts = list("method" = "thresh", "t" = qbeta(0.05,8,ncol(x)-8+1)),
+                       test_opts = list("k" = k))
+  } else {
+    rdistill::rdistill(y = y, x = x, l = layers,
+                       filt_opts = list("method" = "topk","k" = k),
+                       test_opts = list("k" = k))
+  }
+
+}
+
+#' @export
+TestSprigs <- function(y, sprigs, ortho = FALSE, Q = NULL, use.forking = FALSE, ...){
 
   # min number of predictors required to run Renyi Distillation at all
   if(sprigs$num.sprigs < 8){ # require there to be at least 8 sprigs to run
-    return(list("p.value" = rep(NA_real_,ncol(y)),"y" = y))}
+    return(list("p.value" = rep(NA_real_,ncol(y)),"y" = y),"num.layers"=0L)}
 
   p <- sprigs$num.sprigs
   x <- sprigs$assignments
@@ -795,42 +808,52 @@ new_test_sprigs <- function(y, sprigs, ortho = FALSE, ...){
   X <- Matrix::sparseMatrix(i = rep(1:n,each=2), j = x, x = 1L, dims=c(n,p+1))
   X <- X[,-(p+1)]
 
-  if(ortho){
-    layers  <- ortho_part_clades(X)
+  if(!is.null(Q)){
 
-    rdistill::rdistill(y = y, x = X, l = layers,
-                       filt_opts = list("method" = "thresh", "t" = qbeta(0.05,8,ncol(X)-8+1)),
-                       test_opts = list("k" = 8))
+    # if(use.forking){
+    #   res <- parallel::mclapply(as.list(as.data.frame(y)),
+    #                             rdistill::rdistill_pivot,x = X, Q = Q, max_num_causal = 16, ...)
+    # } else {
+    #   res <- apply(y, 2, rdistill::rdistill_pivot, x = X, Q = Q, max_num_causal = 16, ..., simplify = FALSE)
+    # }
+
+    # return(list("p.value" = unlist(lapply(res,function(z){getElement(z,"p_value")})),
+    #             "y" = do.call(cbind,lapply(res,function(z){getElement(z,"y")})),
+    #             "num.layers" = ncol(X)))
+
+    res <- rdistill::rdistill_pivot_par(y = y, x = X, Q = Q, max_num_causal = 16)
+
+    return(list("p.value" = res$p_value,
+                "y" = res$y,
+                "num.layers" = nrow(res$u) - c(Matrix::colSums(is.na(res$u))) ))
+
   } else {
-    # set function for calculating k based on number of clades in a layer
-    opt.args <- list(...)
-    if(!("k" %in% names(opt.args))){
-      opt.args$k <- function(x){2^pmin(pmax(4,ceiling(log2(x/100))),7)}}
 
-    in.first.layer <- part.clades(x1 = x[seq.int(1,length(x),2)],
-                                  x2 = x[seq.int(2,length(x),2)],
-                                  p = p)
+    if(ortho){
+      layers  <- ortho_part_clades(X)
+    } else {
+      # set function for calculating k based on number of clades in a layer
+      in.first.layer <- part.clades(x1 = x[seq.int(1,length(x),2)],
+                                    x2 = x[seq.int(2,length(x),2)],
+                                    p = p)
+      layers <- list(design2layer(X,which(in.first.layer)),
+                     design2layer(X,which(!in.first.layer)))
+      # sort layers so they're tested from largest to smallest
+      layers <- layers[order(sapply(layers,rdistill::size),decreasing = TRUE)]
+    }
 
-    layers <- list(design2layer(X,which(in.first.layer)),
-                   design2layer(X,which(!in.first.layer)))
-    # sort layers so they're tested from largest to smallest
-    layers <- layers[order(sapply(layers,rdistill::size),decreasing = TRUE)]
-    do.call(rdistill::rdistill, c(list("y"=y,"x"=x,"l"=layers),opt.args))
+    if(use.forking){
+      res <- parallel::mclapply(as.list(as.data.frame(y)),new_test_sprigs, x = X, layers = layers, sprigs = sprigs, ortho = ortho, ...)
+    } else {
+      res <- apply(y, 2, new_test_sprigs, x = X, layers = layers, sprigs = sprigs, ortho = ortho, ..., simplify = FALSE)
+    }
+
+    return(list("p.value" = unlist(lapply(res,function(z){getElement(z,"gpval_layers")})),
+                  "y" = do.call(cbind,lapply(res,function(z){getElement(z,"y_new")})),
+                  "num.layers" = length(layers)))
   }
 
-}
 
-#' @export
-TestSprigs <- function(y, sprigs, ortho = FALSE, use.forking = FALSE, ...){
-
-  if(use.forking){
-    res <- parallel::mclapply(as.list(as.data.frame(y)),new_test_sprigs, sprigs = sprigs, ortho = ortho, ...)
-  } else {
-    res <- apply(y, 2, new_test_sprigs, sprigs = sprigs, ortho = ortho, ..., simplify = FALSE)
-  }
-
-  list("p.value" = unlist(lapply(res,function(z){getElement(z,"gpval_layers")})),
-       "y" = do.call(cbind,lapply(res,function(z){getElement(z,"y_new")})))
 }
 
 
