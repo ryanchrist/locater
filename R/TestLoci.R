@@ -17,7 +17,7 @@ make.call.clade <- function(test.opts){
     # pre clade calling options (SMT)
     "smt.noise" = FALSE,
     # clade testing options
-    "max.eigs" = 250L
+    "k.eigs" = as.integer(c(10,40,160,640))
   )
 
   if(!length(test.opts)){test.opts <- as.data.frame(default.opts)}
@@ -61,7 +61,7 @@ make.call.clade <- function(test.opts){
       pre.temp.opts <- subset(call.temp.opts,
                               smt.noise == pre.clade.opts$smt.noise[j])
 
-      test.clade.opts <- unique(pre.temp.opts[,c("max.eigs")])
+      test.clade.opts <- unique(pre.temp.opts[,c("k.eigs")])
 
       for(k in 1:nrow(test.clade.opts)){
         call.clade[[i]]$pre.clade[[j]]$test.clade[[k]] <- list(
@@ -69,7 +69,7 @@ make.call.clade <- function(test.opts){
 
           # MUST UPDATE SUBSET TO MATCH test clade options in default.opts
           "test.config" = subset(pre.temp.opts,
-                         max.eigs == test.clade.opts$max.eigs[k])$test.config)
+                         k.eigs == test.clade.opts$k.eigs[k])$test.config)
       }
     }
   }
@@ -80,7 +80,7 @@ make.call.clade <- function(test.opts){
 #   "smt.noise" = c(TRUE,FALSE,TRUE,TRUE,FALSE,TRUE,FALSE), # Clade-free testing options (eg: SMT, might be more complex)
 #   "thresh" = c(0.2,0.2,1,0.8,0.4,0.4,1), # Clade calling options
 #   "max1var" = c(rep(TRUE,3),rep(FALSE,4)),
-#   "max.eigs" = c(240,200,200,250,100,250,100), # Clade testing options
+#   "k.eigs" = c(240,200,200,250,100,250,100), # Clade testing options
 #   "old.sprigs" = c(TRUE,TRUE,TRUE,FALSE,FALSE,FALSE,TRUE)
 # )
 #
@@ -240,7 +240,7 @@ TestLoci <- function(y, # test phenotypes y
                                  M, # could pass function rather than M here explicitly
                                  smt.res$Q,
                                  other.test.pvalues = list(smt.res$p.value, ro.res$p.value),
-                                 k = if(sw.approx){0}else{test.clade[[k]]$opts$max.eigs}, # 2000 wasn't sufficient to get 98% of var or a negative eigenvalue
+                                 k = if(sw.approx){0}else{test.clade[[k]]$opts$k.eigs}, # 2000 wasn't sufficient to get 98% of var or a negative eigenvalue
                                  use.forking = use.forking,
                                  nthreads = 1L)
           if(verbose){print(paste("Run TestCladeMat @ target",length(target.loci) - t + 1L,"took",signif(proc.time()[3] - start2,digits = 3),"seconds."))}
