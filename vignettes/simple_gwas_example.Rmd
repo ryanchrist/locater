@@ -30,61 +30,73 @@ n <- N()/2 # number of samples
 m <- 20 # number of phenotypes
 
 y <- matrix(rnorm(n*m),n,m)
-g <- QueryCache(c(204,205,207)) # c(204,205,207) are indices of causal loci
-y[,1] <- y[,1] + colSums((g[,seq(1,N(),2)] + g[,seq(2,N(),2)])*c(150,10,30)#c(150,8,20)
+g <- QueryCache(c(204,205,207,210)) # c(204,205,207) are indices of causal loci
+y[,1] <- y[,1] + colSums((g[,seq(1,N(),2)] + g[,seq(2,N(),2)])*c(150,10,30,100)#c(150,8,20)
                          /rowSums(g))
 A <- matrix(1,n,1) # background covariate matrix is just an index here
 
 
 # Specify Locater screening parameters 
-pars <- Parameters(CalcRho(diff(map),s = 0.001),mu = 1e-16) # specify HMM parameters
+pars <- Parameters(CalcRho(diff(map),s = 0.0001),mu = 1e-16) # specify HMM parameters
 
 # Specify a list of optional arguments to control exactly how locater tests each position. If more than one combination of testing parameters is desired, a data.frame with multiple rows can be given and locater will efficiently evaluate all testing options.
-test.opts <- data.frame(
-  "smt.noise" = c(TRUE,TRUE,FALSE,FALSE,"raw"), # Clade-free testing options (eg: SMT, might be more complex)
-  "thresh" = 0.2, 
-  "old.sprigs" = c(FALSE),# Clade calling options
-  "max1var" = c(TRUE,FALSE,TRUE,FALSE,TRUE),
-  "max.eigs" = 250L
-  )
+test.opts <- data.frame("max.k" = 128,
+                        "sw.thresh" = 6,
+                        "eig.thresh" = 6.5)
 
 
 # Determine target loci based on SMT
 smt.res <- TestCachedMarkers(y, A = A)
 target.loci <- FindTargetVars(map, min.cM = 0.1, initial.targets = smt.res, smt.thresh = 3)
 
-# Run TestLoci with sw.approx = TRUE to do initial screen of target loci
-approx.res <- TestLoci(y, pars, target.loci = target.loci, sw.approx = TRUE, test.opts = test.opts,verbose = TRUE)
+res <- TestLoci(y, pars, target.loci = target.loci, test.opts = test.opts, verbose = TRUE)
 
-# Specify a screening threshold: we will revisit variants which have an approximate -log10 p-value greater than screening.thresh
-screening.thresh <- 6
+# sw_approx_qform <- res[phenotype==1,qform]
+# plot(sw_approx_qform,res[phenotype==1,qform]);abline(0,1)
 
-# Select set of target loci for follow up
-new.target.loci <- as.list(1:max(approx.res$test.config))
-for(i in 1:length(new.target.loci)){
-  new.target.loci[[i]] <- as.integer(
-    approx.res[test.config==i,locus.idx[which.thresh.middle(tot,screening.thresh)],phenotype]$V1)}
-new.target.loci <- sort(unique(unlist(new.target.loci)))
 
-# Run TestLoci with sw.approx = FALSE to revisit and exactly evaluate candidate loci
-exact.res <- TestLoci(y, pars, target.loci = new.target.loci, sw.approx = FALSE, test.opts = test.opts, verbose = TRUE)
-
-# Make Manhattan Plot
 smt.p1 <- smt.res[,1]
-approx.p1 <- approx.res[phenotype==1 & test.config == 2,c("locus.idx","tot")]
-exact.p1 <- exact.res[phenotype==1 & test.config == 2,c("locus.idx","tot")]
+res.p1 <- res[phenotype==1,c("locus.idx","tot")]
 
 COLORS <- palette.colors(3)
 plot(0,0, type = "n", 
-     ylim=range(pretty(c(0,max(c(smt.p1,approx.p1$tot,exact.p1$tot),na.rm=T)))),
+     ylim=range(pretty(c(0,max(c(smt.p1,res.p1$tot),na.rm=T)))),
      xlim = range(map),
      las=1,bty="n",
      ylab = "-log10 p-value", xlab = "cM position")
 points(map,smt.p1,col=COLORS[1],pch=20)
-points(map[approx.p1$locus.idx],approx.p1$tot,col=COLORS[2],pch=20)
-points(map[exact.p1$locus.idx],exact.p1$tot,col=COLORS[3],pch=20)
-legend("topleft",legend = c("SMT","Approx Locater","Exact Locater"),
+points(map[res.p1$locus.idx],res.p1$tot,col=COLORS[2],pch=20)
+legend("topleft",legend = c("SMT","LOCATER"),
        fill = COLORS, bty = "n")
+# Specify a screening threshold: we will revisit variants which have an approximate -log10 p-value greater than screening.thresh
+# screening.thresh <- 6
+# 
+# # Select set of target loci for follow up
+# new.target.loci <- as.list(1:max(approx.res$test.config))
+# for(i in 1:length(new.target.loci)){
+#   new.target.loci[[i]] <- as.integer(
+#     approx.res[test.config==i,locus.idx[which.thresh.middle(tot,screening.thresh)],phenotype]$V1)}
+# new.target.loci <- sort(unique(unlist(new.target.loci)))
+
+# Run TestLoci with sw.approx = FALSE to revisit and exactly evaluate candidate loci
+# exact.res <- TestLoci(y, pars, target.loci = new.target.loci, sw.approx = FALSE, test.opts = test.opts, verbose = TRUE)
+
+# Make Manhattan Plot
+# smt.p1 <- smt.res[,1]
+# approx.p1 <- approx.res[phenotype==1 & test.config == 2,c("locus.idx","tot")]
+# exact.p1 <- exact.res[phenotype==1 & test.config == 2,c("locus.idx","tot")]
+# 
+# COLORS <- palette.colors(3)
+# plot(0,0, type = "n", 
+#      ylim=range(pretty(c(0,max(c(smt.p1,approx.p1$tot,exact.p1$tot),na.rm=T)))),
+#      xlim = range(map),
+#      las=1,bty="n",
+#      ylab = "-log10 p-value", xlab = "cM position")
+# points(map,smt.p1,col=COLORS[1],pch=20)
+# points(map[approx.p1$locus.idx],approx.p1$tot,col=COLORS[2],pch=20)
+# points(map[exact.p1$locus.idx],exact.p1$tot,col=COLORS[3],pch=20)
+# legend("topleft",legend = c("SMT","Approx Locater","Exact Locater"),
+#        fill = COLORS, bty = "n")
 
 
 ```

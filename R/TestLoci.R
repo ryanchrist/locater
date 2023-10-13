@@ -17,7 +17,9 @@ make.call.clade <- function(test.opts){
     # pre clade calling options (SMT)
     "smt.noise" = FALSE,
     # clade testing options
-    "k.eigs" = as.integer(c(10,40,160,640))
+    "max.k" = NULL,
+    "sw.thresh" = 6,
+    "eig.thresh" = 6.5
   )
 
   if(!length(test.opts)){test.opts <- as.data.frame(default.opts)}
@@ -61,7 +63,7 @@ make.call.clade <- function(test.opts){
       pre.temp.opts <- subset(call.temp.opts,
                               smt.noise == pre.clade.opts$smt.noise[j])
 
-      test.clade.opts <- unique(pre.temp.opts[,c("k.eigs")])
+      test.clade.opts <- unique(pre.temp.opts[,c("max.k","sw.thresh","eig.thresh")])
 
       for(k in 1:nrow(test.clade.opts)){
         call.clade[[i]]$pre.clade[[j]]$test.clade[[k]] <- list(
@@ -69,7 +71,9 @@ make.call.clade <- function(test.opts){
 
           # MUST UPDATE SUBSET TO MATCH test clade options in default.opts
           "test.config" = subset(pre.temp.opts,
-                         k.eigs == test.clade.opts$k.eigs[k])$test.config)
+                         max.k == test.clade.opts$max.k[k] &
+                         sw.thresh == test.clade.opts$sw.thresh[k] &
+                           eig.thresh == test.clade.opts$eig.thresh[k])$test.config)
       }
     }
   }
@@ -80,21 +84,26 @@ make.call.clade <- function(test.opts){
 #   "smt.noise" = c(TRUE,FALSE,TRUE,TRUE,FALSE,TRUE,FALSE), # Clade-free testing options (eg: SMT, might be more complex)
 #   "thresh" = c(0.2,0.2,1,0.8,0.4,0.4,1), # Clade calling options
 #   "max1var" = c(rep(TRUE,3),rep(FALSE,4)),
-#   "k.eigs" = c(240,200,200,250,100,250,100), # Clade testing options
+#   "max.k" = c(128), # Clade testing options
 #   "old.sprigs" = c(TRUE,TRUE,TRUE,FALSE,FALSE,FALSE,TRUE)
 # )
 #
-# call.clade <- make.call.clade(test.opts)
+# # call.clade <- make.call.clade(test.opts)
 
+calc_k_sched <- function(x){
+  if(is.null(x)){return(NULL)}
+  if(x<8){return(x)}
+  xx <- 2*4^(1:floor(log(x/2)/log(4)))
+  if(tail(xx,1)<x){xx<-c(xx,x)}
+  xx
+}
 
 #' @export
 TestLoci <- function(y, # test phenotypes y
                      pars, # with HMM parameters pars
                      target.loci = 1:L(), # at loci target.loci
                      A = NULL, # with background covariates A
-                     sw.approx = FALSE, # If TRUE, use Satterthwaite Approximation for all QForm tests, critical for screening
                      test.opts = list(), # testing options, may be a data.frame with more than one setting
-
                      # Accelerating testing
                      ############################################
                      verbose = FALSE, # if TRUE, print them. For future: If a directory as a string rather than TRUE/FALSE directory, write timings to a directory.
@@ -125,7 +134,6 @@ TestLoci <- function(y, # test phenotypes y
   h0 <- FitNull(y,A)
   m <- ncol(y)
 
-  if(!is.logical(sw.approx) || length(sw.approx)!=1){stop("sw.approx must be TRUE or FALSE")}
 
   # Check and arrange testing options for efficient execution
   #################################################################
@@ -175,8 +183,9 @@ TestLoci <- function(y, # test phenotypes y
   # Loop over target loci
   ###########################################
   template.res <- test.opts
-  template.res[,c("num.sprigs","k")] <- NA_integer_
-  template.res[,c("prop.var","smt", "rd","qform")] <- NA_real_
+  template.res[,c("num.sprigs","k","exit.status")] <- NA_integer_
+  template.res[,c("precise")] <- FALSE
+  template.res[,c("prop.var","var.ratio","smt", "rd","qform")] <- NA_real_
   template.res <- tidyr::expand_grid(template.res,"phenotype" = if(is.null(colnames(y))){1:m}else{colnames(y)})
   res <- replicate(length(target.loci),template.res,simplify = FALSE)
 
@@ -236,11 +245,16 @@ TestLoci <- function(y, # test phenotypes y
 
           # Test Clades: Test Quadratic Form
           start2 <- proc.time()[3]
+
           qf.res <- TestCladeMat(ro.res$y,
                                  M, # could pass function rather than M here explicitly
                                  smt.res$Q,
-                                 other.test.pvalues = list(smt.res$p.value, ro.res$p.value),
-                                 k = if(sw.approx){0}else{test.clade[[k]]$opts$k.eigs}, # 2000 wasn't sufficient to get 98% of var or a negative eigenvalue
+                                 k = calc_k_sched(test.clade[[k]]$opts$max.k),
+                                 stop.eval.func = function(x, prop.var){
+                                   if(prop.var==0){
+                                     all(msse.test(-log10(smt.res$p.value),-log10(ro.res$p.value),-log10(x),test.1.solo = TRUE) < test.clade[[k]]$opts$sw.thresh)
+                                   } else {
+                                     all(msse.test(-log10(smt.res$p.value),-log10(ro.res$p.value),-log10(x),test.1.solo = TRUE) < test.clade[[k]]$opts$eig.thresh)}},
                                  use.forking = use.forking,
                                  nthreads = 1L)
           if(verbose){print(paste("Run TestCladeMat @ target",length(target.loci) - t + 1L,"took",signif(proc.time()[3] - start2,digits = 3),"seconds."))}
@@ -248,8 +262,11 @@ TestLoci <- function(y, # test phenotypes y
 
           # Store results
           temp <- 1:m + m * (test.clade[[k]]$test.config - 1L)
-          res[[t]][temp,c("num.sprigs","num.layers","k","prop.var","smt","rd","qform") ] <-
-            cbind(rep(sprigs$num.sprigs,m),ro.res$num.layers,qf.res$k.qform,qf.res$prop.var,-log10(smt.res$p.value),-log10(ro.res$p.value),qf.res$qform)
+          res[[t]][temp,c("num.sprigs","num.layers","k","prop.var","var.ratio","exit.status","precise","smt","rd","qform") ] <-
+            cbind(sprigs$num.sprigs,ro.res$num.layers,qf.res$k.qform,qf.res$prop.var,qf.res$var.ratio,
+                  qf.res$exit.status,qf.res$precise,-log10(smt.res$p.value),-log10(ro.res$p.value),qf.res$qform)
+
+
         }
       }
     }
@@ -274,19 +291,19 @@ TestLoci <- function(y, # test phenotypes y
 
 #' @export
 TestLoci_h <- function(y, # test phenotypes y
-                     pars, # with HMM parameters pars
-                     target.loci = 1:L(), # at loci target.loci
-                     A = NULL, # with background covariates A
-                     sw.approx = FALSE, # If TRUE, use Satterthwaite Approximation for all QForm tests, critical for screening
-                     test.opts = list(), # testing options, may be a data.frame with more than one setting
+                       pars, # with HMM parameters pars
+                       target.loci = 1:L(), # at loci target.loci
+                       A = NULL, # with background covariates A
+                       sw.approx = FALSE, # If TRUE, use Satterthwaite Approximation for all QForm tests, critical for screening
+                       test.opts = list(), # testing options, may be a data.frame with more than one setting
 
-                     # Accelerating testing
-                     ############################################
-                     verbose = FALSE, # if TRUE, print them. For future: If a directory as a string rather than TRUE/FALSE directory, write timings to a directory.
-                     num.ckpts = 0L,
-                     ckpt.first.locus = FALSE,
-                     use.forking = FALSE,
-                     nthreads = 1L){
+                       # Accelerating testing
+                       ############################################
+                       verbose = FALSE, # if TRUE, print them. For future: If a directory as a string rather than TRUE/FALSE directory, write timings to a directory.
+                       num.ckpts = 0L,
+                       ckpt.first.locus = FALSE,
+                       use.forking = FALSE,
+                       nthreads = 1L){
 
 
   start0 <- proc.time()[3]

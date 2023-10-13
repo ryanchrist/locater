@@ -346,188 +346,216 @@ calc_traces <- function(M, Q, sym.M = FALSE,
 }
 
 
-
+# see TestCladeMat help
 SimpleCalcBounds <- function(y,
                              matmul,
                              traces,
+                             k = NULL, # vector of positive integers, if null, we just do SW approx taking k=0.
                              min.prop.var = 0.98,
                              var.ratio.goal = 0.9,
-                             k=c(0),
-                             neg.log10.cutoff = NULL, #6
-                             other.test.res = NULL, # -log10 pvalues of other tests w/ list element per observation
-                             lower.tail = FALSE,
+                             stop.eval.func = NULL,
                              parallel.sapply = base::sapply){
 
-  # this function uses the schedule k to evaluate more and more eigenvalues for the implicitly provided matrix until either
-  # at least the top min.prop.var of the variance of the matrix is explained or the last k is reached.
-  # If a neg.log10.cutoff is given, then bounds are calculated for each k and further eigendecomposition is stopped if all of the observed statistics have bounds that exclude them from being
-  # more significant than the provided neg.log10.cutoff.
+  # if stop.eval.func is NULL, then we evaluate the quadratic form until we hit the max k or
+  # we hit the var.ratio.goal or we hit the min.prop.var
 
-  # Motivation behind this approach: we are targeting the full quadratic form as our test statistic -- hence the bounds are exact.  But we typically stop early to get a truncated
-  # estimate of the statistic and just report that p-value.  We ensure that our p-values are well calibrated by computing the truncated test statistic and comparing it to the truncated distribution.
-  # The bounds here are simply a means of conserving compute
+  # stop.eval.func allows us to stop evaluation of the quadratic form early.
+  # it must take in a vector of p-values (or bounds on those p-values) and return
+  # a bool where TRUE stops evaluation for all phenotypes
 
-  # If any of the bounds are not finite due to some sort of numerical instability, then we simply fall back on evaluating min.prop.var of the variance and returning the point estimates
 
-  m <- ncol(y)
-  res <- data.frame("prop.var" = rep(NA_real_,m), "var.ratio" = rep(NA_real_,m), "k.qform" = rep(NA_integer_,m), "qform" = rep(NA_real_,m))
+  # return.status may be
+  # 2 -- "no_clade_structure" and return NAs
+  # 1 -- "numerically_unstable" -- at some point, results from eigendecomposition were incompatible with traces
+  # 0 -- "ok" -- either we've achieved min.prop.var or var.ratio.goal or we hit the max k
+  # we keep the return.status the same across all phenotypes because they're all relevant to all phenotypes.
+  # even if say one phenotype can be ruled as uninteresting using k=5 but we don't run into numerical instability
+  # until say k-10, it's still important for all phenotypes that numerical instability was encountered at this locus
+  # so if eigendecomposition ever disagrees with the traces, we send up a flag at that locus across all phenotypes.
 
-  obs <- c(colSums(y * matmul(y,1)))
-
-  if(length(k)==1 && k[1] == 0){
-    res$prop.var <- 0
-    res$k.qform <- 0L
-    if(traces$hsnorm2 <=0){
-      res$qform <- NA_real_
-    } else {
-      a0 <- traces$hsnorm2 / traces$trace
-      nu0 <- traces$trace^2 / traces$hsnorm2
-      res$qform <- -pchisq(obs/a0,df = nu0,lower.tail = FALSE, log.p = TRUE)/log(10)
+  # check input
+  if(!is.null(stop.eval.func)){
+    if(!is.function(stop.eval.func)){
+      stop("stop.eval.func must be a function with either 1 or 2 arguments, see Details")
     }
+    num_args <- length(formals(args(stop.eval.func)))
+
+    if(!(num_args %in% c(1L,2L))){
+      stop("stop.eval.func must be a function with either 1 or 2 arguments, see Details")
+    }
+  }
+
+
+
+  # Initialize Output
+  m <- ncol(y)
+  res <- data.frame("prop.var" = rep(NA_real_,m),
+                    "var.ratio" = rep(NA_real_,m),
+                    "k.qform" = rep(NA_integer_,m),
+                    "qform" = rep(NA_real_,m),
+                    "exit.status" = rep(0L,m),
+                    "precise" = rep(FALSE,m)) # num instability in trace calculation or eigendecomposition
+
+  if(traces$hsnorm2 <=0){
+    res$exit.status <- 2L
     return(res)
   }
 
-  n <- nrow(y)
-  k <- sort(unique(c(pmin(k,floor(0.9*n))))) # so we stop at max k even if we can't get the min variance desired
-  f <- function(k,args){RSpectra::eigs_sym(matmul,
-                                           k = k, n = n, args = args,
-                                           opts = list("ncv" = min(n, max( 4*((2*k+1)%/%4+1), 20)) ))}
+  obs <- c(colSums(y * matmul(y,0)))
 
+  # Start with SW approximation
+  res$prop.var <- 0
+  res$k.qform <- 0L
+  a0 <- traces$hsnorm2 / traces$trace
+  nu0 <- traces$trace^2 / traces$hsnorm2
+  res$qform <- -pchisq(obs/a0,df = nu0,lower.tail = FALSE, log.p = TRUE)/log(10)
 
-  #res <- matrix(NA_real_,nrow=15,ncol=length(obs))
+  if(is.null(k) || (length(k)==1 && k==0)){
+    return(res)
+  }
 
-  unfinished <- rep(TRUE,length(obs))
-  j <- 0
-
-  while(any(unfinished)){
-
-    j <- j+1 # advance to next k
-    e <- f(k[j], 0)
-    sum_evalues <- sum(e$values)
-    sum_evalues_2 <- sum(e$values^2)
-
-    res$prop.var <- sum_evalues_2/traces$hsnorm2
-    if(k[j]>1){res$var.ratio <- (e$values[k[j]]/e$values[k[j]-1])^2}
-    res$k.qform <- k[j]
-
-    # check if traces or eigendecomposition look stable
-    if(traces$hsnorm2 <=0 |
-       sum_evalues_2/length(e$values) < traces$hsnorm2/length(traces$diag) |
-       abs(traces$trace - sum_evalues) > min(abs(e$values))*(n-length(e$values))){
-      # the leading e$values^2 can't sum up to the estimated hsnorm2 -- eigendecomposition is too
-      # unstable and so the QForm test must be dropped for all phenotypes: we exit with all NAs
-      return(res)}
-
-    # if we've obtained min.prop.var or we've hit the max k, return final estimates
-    if(res$var.ratio[1] >= var.ratio.goal | res$prop.var[1] >= min.prop.var | j == length(k)){
-
-      # subset eigenvalues and eigenvectors so that all negative eigenvalues are removed
-      # and if that's not a constraint, that only the min.prop.var is obtained (to guard against low-rank clade matrices)
-      # k.max1 <- match(TRUE,cumsum(e$values^2)/traces$hsnorm2 >= min.prop.var)
-      # if(is.na(k.max1)){k.max1 <- k[j]}
-      #
-      # k.max2 <- match(TRUE,e$values<=0)-1L
-      # if(is.na(k.max2)){k.max2 <- k[j]}
-      # if(k.max2 == 0){ # the first eigenvalue is negative, so we exit with all NAs
-      #   return(res)}
-      #
-      # k.max <- min(k.max1,k.max2)
-
-
-
-      # alternative
-      # subset eigenvalues and eigenvectors so that we do not include an eigenvalues with magnitude less
-      # than 10^-12.  This guards again low-rank clade matrices.
-      # k.max <- match(TRUE,abs(e$values) < 1e-12)-1L
-      # if(is.na(k.max)){k.max <- k[j]}
-      # if(k.max == 0){ # the first eigenvalue is below 10^-12, so we exit with all NAs
-      #   return(res)}
-      #
-      #
-      # e$values <- e$values[1:k.max]
-      # e$vectors <- e$vectors[,1:k.max]
-      # sum_evalues <- sum(e$values)
-      # sum_evalues_2 <- sum(e$values^2)
-
-
-      if(traces$hsnorm2 > sum_evalues_2){
-      g <- SimpleCalcQFGauss(e$values,
-                             mu.R = traces$trace - sum_evalues,
-                             sigma.R = sqrt(2*(traces$hsnorm2 - sum_evalues_2)),
-                             parallel.sapply)
-      } else {
-        g <- SimpleCalcQFGauss(e$values,
-                               parallel.sapply)
-      }
-
-
-      # z2 <- crossprod(e$vectors, y)^2
-      # obs.qf <- c(colSums(e$values * z2))
-      # res$qform <- g(obs.qf) # note we don't need to do projection of Q here b/c already baked into e$vectors/values
-
-      res$qform <- g(obs)
-
-
-#       a0 <- sum(e$values^2) / sum(e$values)
-#       nu0 <- sum(e$values)^2 / sum(e$values^2)
-#
-#       res[6,] <- -pchisq(obs.qf/a0,df = nu0,lower.tail = FALSE, log.p = TRUE)/log(10)
-#
-#       u <- pchisq(z2,df = 1,lower.tail = FALSE)
-#
-#       res[7,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 4),function(x){getElement(x,"p.value")}))
-#       res[8,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 16),function(x){getElement(x,"p.value")}))
-#       res[9,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 64),function(x){getElement(x,"p.value")}))
-#
-#       w <- e$values
-#       w <- floor(w/min(w))
-#       res[10,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 4, w = w),function(x){getElement(x,"p.value")}))
-#       res[11,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 16, w = w),function(x){getElement(x,"p.value")}))
-#       res[12,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 64, w = w),function(x){getElement(x,"p.value")}))
-#
-#       w <- e$values^2
-#       w <- floor(w/min(w))
-#       res[13,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 4, w = w),function(x){getElement(x,"p.value")}))
-#       res[14,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 16, w = w),function(x){getElement(x,"p.value")}))
-#       res[15,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 64, w = w),function(x){getElement(x,"p.value")}))
-
+  if(!is.null(stop.eval.func)){
+    if((num_args==1 && stop.eval.func(10^-res$qform)) || (num_args==2 && stop.eval.func(10^-res$qform,0))){
       return(res)
     }
   }
 
-    # Code below is for calculating and screening based on iterative bounds and used to be a part of the
-    # for loop above
-    # START
-    ###############
-#
-#     if(is.null(neg.log10.cutoff)){next}
-#
-#     # otherwise, calculate bounds
-#     calc.func <- SimpleCalcBounds2(traces, e, parallel.sapply)
-#     temp.bounds <- calc.func(obs)
-#
-#     # if any of the bounds are unstable (are not finite, then go back to top of loop for more eigenvalues)
-#     if(any(!is.finite(temp.bounds))){next}
-#
-#     # combine QForm bounds with other test results to obtain upper bounds estimates on significance
-#     bound.est <- rep(NA_real_,length(obs))
-#     if(!is.null(other.test.res)){
-#       for(p in 1:length(obs)){
-#         bound.est[p] <- fishv(c(other.test.res[[p]],temp.bounds[p,if(lower.tail){3}else{4}]))
-#       }
-#     } else {
-#       bound.est <- temp.bounds[,if(lower.tail){3}else{4}]
-#     }
-#
-#     for(p in 1:length(obs)){
-#       if(!is.na(bound.est[p]) && bound.est[p] < neg.log10.cutoff){
-#         unfinished[p] <- FALSE}
-#     }
-    #########
-    # END
-    ###############
 
-  res
+  # try to refine approximation
+  ###################################
+
+  n <- nrow(y)
+
+  if(!all.equal(as.integer(k),k) || any(k<0) || any(k>floor(0.9*n))){
+    stop("k must be a vector of positive integers in [0,floor(0.9*n)] where n x n is the dimension of the matrix.")}
+  k <- sort(unique(as.integer(k)))
+  if(k[1]==0){k <- k[-1]} # drop k=0 case if included
+
+
+  # define helper function and expression
+
+  f <- function(k,args){
+    e_values <- RSpectra::eigs_sym(matmul,
+                                   k = k, n = n, args = args,
+                                   opts = list("ncv" = min(n, max( 4*((2*k+1)%/%4+1), 20)) ,
+                                               "retvec" = FALSE))$values
+    e_values[order(abs(e_values),decreasing = TRUE)]
+  }
+
+  update_res_qform <- expression({
+    if(traces$hsnorm2 > sum_evalues_2){
+      g <- SimpleCalcQFGauss(e_values,
+                             mu.R = traces$trace - sum_evalues,
+                             sigma.R = sqrt(2*(traces$hsnorm2 - sum_evalues_2)),
+                             parallel.sapply)
+    } else {
+      g <- SimpleCalcQFGauss(e_values,
+                             parallel.sapply)
+    }
+
+    res$qform <- g(obs)
+  })
+
+
+  # keep checking if we can / need to improve the approximation
+  for(j in 1:length(k)){
+
+    e_values <- f(k[j], 0) # returned pre-sorted from largest to smallest magnitude
+    sum_evalues <- sum(e_values)
+    sum_evalues_2 <- sum(e_values^2)
+
+    # check whether returned eigenvalues look incompatible with traces (numerical instability)
+    if(sum_evalues_2/k[j] < traces$hsnorm2/length(traces$diag) |
+       abs(traces$trace - sum_evalues) > abs(e_values[k[j]])*(n-k[j])){
+      res$exit.status <- 1L
+      return(res)
+    }
+
+    # accept eigenvalues
+    res$prop.var <- sum_evalues_2/traces$hsnorm2
+    if(k[j] > 1){res$var.ratio <- (e_values[k[j]]/e_values[k[j]-1])^2}
+    res$k.qform <- k[j]
+
+    # TEST IF WE'VE ACHIEVED A PRECISE APPROX SO WE CAN STOP
+    if(res$prop.var[1] >= min.prop.var | (k[j]>1 && res$var.ratio[1] >= var.ratio.goal)){
+      eval(update_res_qform)
+      res$precise <- TRUE
+      return(res)
+    }
+
+    # TRY TO STOP EARLY IF NO PHENOTYPE LOOKS SIGNIFICANT
+
+    if(!is.null(stop.eval.func)){
+      eval(update_res_qform)
+      if((num_args==1 && stop.eval.func(10^-res$qform)) || (num_args==2 && stop.eval.func(10^-res$qform,0))){
+        return(res)
+      }
+    }
+
+  }
+
+  # WE'VE HIT MAX K
+  # so evaluate and exit with precise=FALSE.
+  eval(update_res_qform)
+  return(res)
+
+
+  #       a0 <- sum(e$values^2) / sum(e$values)
+  #       nu0 <- sum(e$values)^2 / sum(e$values^2)
+  #
+  #       res[6,] <- -pchisq(obs.qf/a0,df = nu0,lower.tail = FALSE, log.p = TRUE)/log(10)
+  #
+  #       u <- pchisq(z2,df = 1,lower.tail = FALSE)
+  #
+  #       res[7,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 4),function(x){getElement(x,"p.value")}))
+  #       res[8,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 16),function(x){getElement(x,"p.value")}))
+  #       res[9,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 64),function(x){getElement(x,"p.value")}))
+  #
+  #       w <- e$values
+  #       w <- floor(w/min(w))
+  #       res[10,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 4, w = w),function(x){getElement(x,"p.value")}))
+  #       res[11,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 16, w = w),function(x){getElement(x,"p.value")}))
+  #       res[12,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 64, w = w),function(x){getElement(x,"p.value")}))
+  #
+  #       w <- e$values^2
+  #       w <- floor(w/min(w))
+  #       res[13,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 4, w = w),function(x){getElement(x,"p.value")}))
+  #       res[14,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 16, w = w),function(x){getElement(x,"p.value")}))
+  #       res[15,] <- -log10(sapply(apply(u,2, ro::renyi.test,k = 64, w = w),function(x){getElement(x,"p.value")}))
+
+
+  # Code below is for calculating and screening based on iterative bounds and used to be a part of the
+  # for loop above
+  # START
+  ###############
+  #
+  #     if(is.null(neg.log10.cutoff)){next}
+  #
+  #     # otherwise, calculate bounds
+  #     calc.func <- SimpleCalcBounds2(traces, e, parallel.sapply)
+  #     temp.bounds <- calc.func(obs)
+  #
+  #     # if any of the bounds are unstable (are not finite, then go back to top of loop for more eigenvalues)
+  #     if(any(!is.finite(temp.bounds))){next}
+  #
+  #     # combine QForm bounds with other test results to obtain upper bounds estimates on significance
+  #     bound.est <- rep(NA_real_,length(obs))
+  #     if(!is.null(other.test.res)){
+  #       for(p in 1:length(obs)){
+  #         bound.est[p] <- fishv(c(other.test.res[[p]],temp.bounds[p,if(lower.tail){3}else{4}]))
+  #       }
+  #     } else {
+  #       bound.est <- temp.bounds[,if(lower.tail){3}else{4}]
+  #     }
+  #
+  #     for(p in 1:length(obs)){
+  #       if(!is.na(bound.est[p]) && bound.est[p] < neg.log10.cutoff){
+  #         unfinished[p] <- FALSE}
+  #     }
+  #########
+  # END
+  ###############
+
 }
 
 
