@@ -12,14 +12,15 @@ make.call.clade <- function(test.opts){
   default.opts <- list(
     # clade calling options
     "thresh" = 0.2,
-    "max1var" = FALSE,
+    "max1var" = TRUE,
     "old.sprigs" = FALSE,
     # pre clade calling options (SMT)
-    "smt.noise" = FALSE,
+    "smt.noise" = "raw",
     # clade testing options
     "max.k" = NULL,
     "sw.thresh" = 6,
-    "eig.thresh" = 6.5
+    "eig.thresh" = 6.5,
+    "cs.approx" = FALSE
   )
 
   if(!length(test.opts)){test.opts <- as.data.frame(default.opts)}
@@ -63,7 +64,7 @@ make.call.clade <- function(test.opts){
       pre.temp.opts <- subset(call.temp.opts,
                               smt.noise == pre.clade.opts$smt.noise[j])
 
-      test.clade.opts <- unique(pre.temp.opts[,c("max.k","sw.thresh","eig.thresh")])
+      test.clade.opts <- unique(pre.temp.opts[,c("max.k","sw.thresh","eig.thresh","cs.approx")])
 
       for(k in 1:nrow(test.clade.opts)){
         call.clade[[i]]$pre.clade[[j]]$test.clade[[k]] <- list(
@@ -71,9 +72,10 @@ make.call.clade <- function(test.opts){
 
           # MUST UPDATE SUBSET TO MATCH test clade options in default.opts
           "test.config" = subset(pre.temp.opts,
-                         max.k == test.clade.opts$max.k[k] &
-                         sw.thresh == test.clade.opts$sw.thresh[k] &
-                           eig.thresh == test.clade.opts$eig.thresh[k])$test.config)
+                                 max.k == test.clade.opts$max.k[k] &
+                                   sw.thresh == test.clade.opts$sw.thresh[k] &
+                                   eig.thresh == test.clade.opts$eig.thresh[k] &
+                                   cs.approx == test.clade.opts$cs.approx[k])$test.config)
       }
     }
   }
@@ -255,6 +257,7 @@ TestLoci <- function(y, # test phenotypes y
                                      all(msse.test(-log10(smt.res$p.value),-log10(ro.res$p.value),-log10(x),test.1.solo = TRUE) < test.clade[[k]]$opts$sw.thresh)
                                    } else {
                                      all(msse.test(-log10(smt.res$p.value),-log10(ro.res$p.value),-log10(x),test.1.solo = TRUE) < test.clade[[k]]$opts$eig.thresh)}},
+                                 cs.approx = test.clade[[k]]$opts$cs.approx,
                                  use.forking = use.forking,
                                  nthreads = 1L)
           if(verbose){print(paste("Run TestCladeMat @ target",length(target.loci) - t + 1L,"took",signif(proc.time()[3] - start2,digits = 3),"seconds."))}

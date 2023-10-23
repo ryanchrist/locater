@@ -352,8 +352,9 @@ SimpleCalcBounds <- function(y,
                              traces,
                              k = NULL, # vector of positive integers, if null, we just do SW approx taking k=0.
                              min.prop.var = 0.98,
-                             var.ratio.goal = 0.9,
+                             var.ratio.goal = 0.95,
                              stop.eval.func = NULL,
+                             cs.approx = FALSE,
                              parallel.sapply = base::sapply){
 
   # if stop.eval.func is NULL, then we evaluate the quadratic form until we hit the max k or
@@ -443,14 +444,63 @@ SimpleCalcBounds <- function(y,
   }
 
   update_res_qform <- expression({
-    if(traces$hsnorm2 > sum_evalues_2){
+
+    mu.R <- traces$trace - sum_evalues
+    var.R <- 2*(traces$hsnorm2 - sum_evalues_2)
+
+    if(var.R <= 0){
       g <- SimpleCalcQFGauss(e_values,
-                             mu.R = traces$trace - sum_evalues,
-                             sigma.R = sqrt(2*(traces$hsnorm2 - sum_evalues_2)),
                              parallel.sapply)
+
     } else {
-      g <- SimpleCalcQFGauss(e_values,
-                             parallel.sapply)
+
+      if(cs.approx){
+
+        lambda <- abs(e_values[length(e_values)])
+        a.plus.b <- floor(var.R / (2*lambda^2))
+
+        if(a.plus.b==0){
+
+          extended_e_values <- e_values
+          mu.gauss <- mu.R
+          sigma.gauss <- sqrt(var.R)
+
+        }else{
+
+          a.minus.b <- mu.R / lambda
+          a <- (a.plus.b + a.minus.b)/2
+
+          if(a > a.plus.b){
+            a <- a.plus.b
+          } else if(a <= 1){
+            a <- 1
+          } else {
+            a <- ceiling(a)
+          }
+
+          b <- a.plus.b - a
+
+
+          extended_e_values <- c(e_values,rep(lambda,a),rep(-lambda,b))
+          sigma.gauss <- sqrt(var.R - 2*(a+b)*lambda^2)
+          mu.gauss <- mu.R - lambda*(a-b)
+
+        }
+      } else {
+        extended_e_values <- e_values
+        mu.gauss <- mu.R
+        sigma.gauss <- sqrt(var.R)
+      }
+
+      if(sigma.gauss > 0){
+        g <- SimpleCalcQFGauss(extended_e_values,
+                               mu.gauss = mu.gauss,
+                               sigma.gauss = sigma.gauss,
+                               parallel.sapply)
+      } else {
+        g <- SimpleCalcQFGauss(e_values,
+                               parallel.sapply)
+      }
     }
 
     res$qform <- g(obs)
@@ -559,9 +609,9 @@ SimpleCalcBounds <- function(y,
 }
 
 
-SimpleCalcQFGauss <- function(e.values, mu.R = 0, sigma.R = 0, parallel.sapply = base::sapply){
-  gauss.tcdf <- QForm::QFGauss(e.values, sigma = sigma.R, parallel.sapply = parallel.sapply)
-  return(function(obs, lower.tail = FALSE){-gauss.tcdf(obs-mu.R, lower.tail = lower.tail, log.p = TRUE)/log(10)})
+SimpleCalcQFGauss <- function(e.values, mu.gauss = 0, sigma.gauss = 0, parallel.sapply = base::sapply){
+  gauss.tcdf <- QForm::QFGauss(e.values, sigma = sigma.gauss, parallel.sapply = parallel.sapply)
+  return(function(obs, lower.tail = FALSE){-gauss.tcdf(obs-mu.gauss, lower.tail = lower.tail, log.p = TRUE)/log(10)})
 }
 
 

@@ -17,8 +17,9 @@
 #' @param Q an orthogonal matrix whose columns span the column space of the background covariates
 #' @param k a vector of non-negative integers, number of eigenvalues to calculate to try to approximate the null distribution, see Details.
 #' @param min.prop.var a double in [0,1], if we've obtained enough eigenvalues to explain at least this minimum proportion of variance, then we can trust our approximation and stop calculating eigenvalues, see Details.
-#' @param var.ratio.goal a double in [0,1], if \lambda_k / \lambda_{k-1} >= var.ratio.goal, the spectrum has plateaued, then we can trust our approximation and stop calculating eigenvalues, see Details.
+#' @param var.ratio.goal a double in [0,1], if lambda_k / lambda_{k-1} >= var.ratio.goal, the spectrum has plateaued, then we can trust our approximation and stop calculating eigenvalues, see Details.
 #' @param stop.eval.func a function that returns TRUE if all associations can be ruled insignificant and eigendecomposition stopped early, see Details.
+#' @param cs.approx a logical, should a difference of chi-squares be used to try to approximate remainder or should all of the remainder be left to a Gaussian approximation (the default)
 #' @param use.forking a logical, should forking be used during underlying FFT?
 #' @param nthreads a positive integer, how many cores in multithreaded routines?
 #' @return
@@ -35,6 +36,7 @@ TestCladeMat <- function(y, M, Q,
                          min.prop.var = 0.98,
                          var.ratio.goal = 0.9,
                          stop.eval.func = NULL,
+                         cs.approx = FALSE,
                          use.forking = FALSE,
                          nthreads = 1L){
 
@@ -65,5 +67,6 @@ TestCladeMat <- function(y, M, Q,
                    var.ratio.goal = 0.9,
                    k = k, # vector of positive integers, if null, we just do SW approx taking k=0.
                    stop.eval.func = stop.eval.func,
+                   cs.approx = cs.approx,
                    parallel.sapply = base::sapply)
 }
