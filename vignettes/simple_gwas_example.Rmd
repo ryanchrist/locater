@@ -50,7 +50,17 @@ test.opts <- data.frame("max.k" = 128,
 smt.res <- TestCachedMarkers(y, A = A)
 target.loci <- FindTargetVars(map, min.cM = 0.1, initial.targets = smt.res, smt.thresh = 3)
 
+set.seed(53)
 res <- TestLoci(y, pars, target.loci = target.loci, test.opts = test.opts, verbose = TRUE)
+# 
+# set.seed(89)
+# res2 <- TestLoci(y, pars, target.loci = target.loci, test.opts = test.opts, verbose = TRUE)
+# 
+# plot(res$rd,res2$rd);abline(0,1)
+# t.test(qnorm(10^-res$rd),qnorm(10^-res2$rd))
+# 
+# plot(res$tot,res2$tot);abline(0,1)
+# t.test(qnorm(10^-res$tot),qnorm(10^-res2$tot))
 
 # sw_approx_qform <- res[phenotype==1,qform]
 # plot(sw_approx_qform,res[phenotype==1,qform]);abline(0,1)

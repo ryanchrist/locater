@@ -456,34 +456,184 @@ SimpleCalcBounds <- function(y,
 
       if(cs.approx){
 
-        lambda <- abs(e_values[length(e_values)])
-        a.plus.b <- floor(var.R / (2*lambda^2))
+        new.cs.approx <- FALSE
 
-        if(a.plus.b==0){
+        if(new.cs.approx){
 
-          extended_e_values <- e_values
-          mu.gauss <- mu.R
-          sigma.gauss <- sqrt(var.R)
+          # here we assume that k is at least 3 here.
 
-        }else{
+          x <- abs(tail(e_values,3))
 
-          a.minus.b <- mu.R / lambda
-          a <- (a.plus.b + a.minus.b)/2
+          if(x[3] >= x[1]){
+            # assume eigenvalues have reached plateau based on x[1]
+            lambda <- double()
+            abs_last_lambda <- x[1]
+            last_df <- floor(var.R / (2*abs_last_lambda^2))
 
-          if(a > a.plus.b){
-            a <- a.plus.b
-          } else if(a <= 1){
-            a <- 1
+          } else if(x[3] >= x[2]){
+            # assume eigenvalues have reached plateau based on x[2]
+            lambda <- double()
+            abs_last_lambda <- x[2]
+            last_df <- floor(var.R / (2*abs_last_lambda^2))
+
           } else {
-            a <- ceiling(a)
+
+            if(x[2] >= 0.5*(x[3]+x[1]) ){
+              # assume eigenvalues are exponentially decaying based on x[3] and x[1] with floor of zero
+              # extrapolate out 30 eigenvalues
+              lambda <- (x[3])*sqrt(x[3]/x[1])^(1:30)
+
+            } else {
+              # estimate exponential decay and floor
+              alpha = max(0,(x[2]^2 - x[1]*x[3])/(2-x[1]-x[3])) # alpha must be >= 0
+              beta = min(1-sqrt(.Machine$double.eps),max(sqrt(.Machine$double.eps),(x[3]-alpha)/(x[2]-alpha)))
+              # beta must be in (0,1) and we back it off zero and 1 just a bit to have some numerical precision and robustness
+
+              # extrapolate out 30 eigenvalues
+              lambda <- (x[3]-alpha)*beta^(1:30) + alpha
+            }
+
+            if(var.R < 2*lambda[1]^2){
+
+              lambda <- double() # lambda will not quite capture all of the variance
+              abs_last_lambda <- 0
+              last_df <- 0L
+
+            } else {
+
+              lambda <- lambda[1:(match(TRUE,var.R < 2*cumsum(lambda^2),nomatch = length(lambda)+1L)-1L)]
+              abs_last_lambda <- lambda[length(lambda)]
+              last_df <- max(0L,floor((var.R - 2*sum(lambda^2))/(2*abs_last_lambda^2)))
+
+            }
+
           }
 
-          b <- a.plus.b - a
+
+          # ASSIGN ANY REMAINING VARIANCE TO GAUSSIAN
+          # ATTENTION: sigma.gauss here IS allowed to be zero. mu.gauss directly shifts the distribution, so the
+          # the Gaussian component can be degenerate and the mean shift still occurs
+          sigma.gauss <- max(0,var.R - 2*sum(lambda^2) - 2*last_df*abs_last_lambda^2)
 
 
-          extended_e_values <- c(e_values,rep(lambda,a),rep(-lambda,b))
-          sigma.gauss <- sqrt(var.R - 2*(a+b)*lambda^2)
-          mu.gauss <- mu.R - lambda*(a-b)
+
+          # ASSIGN SIGNS TO UNSIGNED EIGENVALUES
+          if(length(lambda) | last_df){
+
+            imputed_e_values <- c(rep(abs_last_lambda,ceiling(last_df/2)), lambda[seq(1,length(lambda),by=2)],
+                                  rep(abs_last_lambda,last_df-ceiling(last_df/2)), lambda[seq(2,length(lambda),by=2)])
+
+            cs_imputed_e_values <- c(0,cumsum(imputed_e_values))
+
+            set_to_make_positive <- seq_len(findInterval(mu.R, cs_imputed_e_values - rev(cs_imputed_e_values)))
+
+            imputed_e_values <- -imputed_e_values
+            imputed_e_values[set_to_make_positive] <- -imputed_e_values[set_to_make_positive]
+
+            sum_imputed_e_values <- sum(imputed_e_values)
+
+            extended_e_values <- c(e_values,imputed_e_values)
+          } else {
+            extended_e_values <- e_values
+          }
+
+          browser()
+          #print(extended_e_values)
+
+          # MAKE ANY FINAL CORRECTIONS TO THE MEAN
+          mu.gauss <- traces$trace - sum(extended_e_values)
+
+          #
+          #
+          #   # Calculate size of each "resource" to draw on for negative eigenvalues
+          #
+          #   odd_lambda <- lambda[seq(1,length(lambda),by=2)]
+          #   even_lambda <- lambda[seq(2,length(lambda),by=2)]
+          #
+          #   A <- ceiling(last_df/2)*abs_last_lambda
+          #   B <- if(length(lambda)){sum(odd_lambda)}else{0}
+          #   C <- (last_df - A)*abs_last_lambda
+          #   D <- if(length(lambda)>=2){sum(even_lambda)}else{0}
+          #
+          #   sign_strategy <- findInterval(mu.R, c(-A-B-C-D, -A-B-C+D, -A-B+C+D, -A+B+C+D, A+B+C+D))
+          #
+          #   if(sign_strategy == 0){
+          #     # flip all signs
+          #     lambda <- -lambda
+          #     a <- 0
+          #     b <- last_df
+          #   } else if(sign_strategy == 1){
+          #
+          #     lambda[seq(1,length(lambda),by=2)]
+          #     a <- 0
+          #     b <- last_df
+          #   } else if(sign_strategy == 2){
+          #
+          #
+          #   } else if (sign_strategy == 3){
+          #
+          #     match(TRUE, mu.R-C-D rev(odd_lambda)
+          #     lambda[1:(match(TRUE,var.R < 2*cumsum(lambda^2),nomatch = length(lambda)+1L)-1L)]
+          #     lambda[seq(1,length(lambda),by=2)]
+          #
+          #     b <- A
+          #     a <- last_df - b
+          #
+          #   } else if (sign_strategy == 4){
+          #
+          #     b <- ceiling( (mu.R-B-C-D) / abs_last_lambda)
+          #     a <- last_df - b
+          #
+          #   } else if (sign_strategy == 5){
+          #     a <- last_df
+          #     b <- 0
+          #   }
+          #
+          # }
+
+
+
+        } else {
+
+          lambda <- abs(e_values[length(e_values)])
+
+          a.plus.b <- floor(var.R / (2*lambda^2))
+
+          if(a.plus.b==0){
+
+            extended_e_values <- e_values
+            mu.gauss <- mu.R
+            sigma.gauss <- sqrt(var.R)
+
+          }else{
+
+            target_mean_in_lambda <- mu.R / lambda
+
+            if(target_mean_in_lambda >= a.plus.b){
+              a <- a.plus.b
+              b <- 0
+            } else if(target_mean_in_lambda <= -a.plus.b){
+              a <- 0
+              b <- a.plus.b
+            } else {
+              if(a.plus.b%%2){
+                # map target_mean_in_lambda to nearest odd integer (excluding 0)
+                a.minus.b <- sign(target_mean_in_lambda)*(2*pmax(1,round((abs(target_mean_in_lambda)+1)/2))-1)
+              }else {
+                # map target_mean_in_lambda to nearest even integer (possibly 0)
+                a.minus.b <- sign(target_mean_in_lambda)*(2*round(abs(target_mean_in_lambda)/2))
+              }
+
+              a <- (a.plus.b + a.minus.b) / 2
+              b <- a.plus.b - a
+            }
+
+            print(paste("Using remainder approx. with parameters",a,",",b))
+
+            extended_e_values <- c(e_values,rep(lambda,a),rep(-lambda,b))
+            sigma.gauss <- sqrt(var.R - 2*(a+b)*lambda^2)
+            mu.gauss <- mu.R - lambda*(a-b)
+          }
 
         }
       } else {

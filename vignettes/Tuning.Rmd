@@ -55,7 +55,7 @@ for(i in 1:n.reps){
   
   # specify options for selecting causal variant and target variant
   candidate.causal.idx <- seq(floor(L()/2)-20,len=40)
-  tuning.loci <- select.tuning.loci(candidate.causal.idx,
+  tuning.loci <- select_tuning_loci(candidate.causal.idx,
                                     map, 
                                     desired.cM.dist = 0.0001,tol = 0.1) 
   # probably want to increase desired.cM.dist to ~ 0.01 for real problems

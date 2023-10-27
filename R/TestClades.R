@@ -64,7 +64,7 @@ TestCladeMat <- function(y, M, Q,
                    matmul,
                    traces,
                    min.prop.var = 0.98,
-                   var.ratio.goal = 0.9,
+                   var.ratio.goal = 0.98,
                    k = k, # vector of positive integers, if null, we just do SW approx taking k=0.
                    stop.eval.func = stop.eval.func,
                    cs.approx = cs.approx,

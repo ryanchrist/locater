@@ -106,7 +106,7 @@ which.thresh.middle <- function(x,thresh){
 
 
 #' @export
-select.tuning.loci <- function(idx, map, desired.cM.dist = 0.01, tol = 0.1){
+select_tuning_loci <- function(idx, map, desired.cM.dist = 0.01, tol = 0.1){
 
   default.return <- list("causal.idx" = NA_integer_, "target.idx" = NA_integer_)
 
