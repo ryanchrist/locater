@@ -537,7 +537,7 @@ SimpleCalcBounds <- function(y,
             extended_e_values <- e_values
           }
 
-          browser()
+          #browser()
           #print(extended_e_values)
 
           # MAKE ANY FINAL CORRECTIONS TO THE MEAN
