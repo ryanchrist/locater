@@ -20,7 +20,7 @@ make.call.clade <- function(test.opts){
     "max.k" = NULL,
     "sw.thresh" = 6,
     "eig.thresh" = 6.5,
-    "cs.approx" = FALSE
+    "calc.obs.T" = FALSE
   )
 
   if(!length(test.opts)){test.opts <- as.data.frame(default.opts)}
@@ -64,7 +64,7 @@ make.call.clade <- function(test.opts){
       pre.temp.opts <- subset(call.temp.opts,
                               smt.noise == pre.clade.opts$smt.noise[j])
 
-      test.clade.opts <- unique(pre.temp.opts[,c("max.k","sw.thresh","eig.thresh","cs.approx")])
+      test.clade.opts <- unique(pre.temp.opts[,c("max.k","sw.thresh","eig.thresh","calc.obs.T")])
 
       for(k in 1:nrow(test.clade.opts)){
         call.clade[[i]]$pre.clade[[j]]$test.clade[[k]] <- list(
@@ -75,7 +75,7 @@ make.call.clade <- function(test.opts){
                                  max.k == test.clade.opts$max.k[k] &
                                    sw.thresh == test.clade.opts$sw.thresh[k] &
                                    eig.thresh == test.clade.opts$eig.thresh[k] &
-                                   cs.approx == test.clade.opts$cs.approx[k])$test.config)
+                                   calc.obs.T == test.clade.opts$calc.obs.T[k])$test.config)
       }
     }
   }
@@ -187,9 +187,11 @@ TestLoci <- function(y, # test phenotypes y
   template.res <- test.opts
   template.res[,c("num.sprigs","k","exit.status")] <- NA_integer_
   template.res[,c("precise")] <- FALSE
-  template.res[,c("prop.var","var.ratio","smt", "rd","qform")] <- NA_real_
+  template.res[,c("obs.qform","obs.qform.T","smt","rd","qform")] <- NA_real_
   template.res <- tidyr::expand_grid(template.res,"phenotype" = if(is.null(colnames(y))){1:m}else{colnames(y)})
   res <- replicate(length(target.loci),template.res,simplify = FALSE)
+
+  clade.details <- as.list(seq_len(length(target.loci)))
 
   if(verbose){print(paste("Starting loop over",length(target.loci),"target loci..."))}
 
@@ -257,18 +259,22 @@ TestLoci <- function(y, # test phenotypes y
                                      all(msse.test(-log10(smt.res$p.value),-log10(ro.res$p.value),-log10(x),test.1.solo = TRUE) < test.clade[[k]]$opts$sw.thresh)
                                    } else {
                                      all(msse.test(-log10(smt.res$p.value),-log10(ro.res$p.value),-log10(x),test.1.solo = TRUE) < test.clade[[k]]$opts$eig.thresh)}},
-                                 cs.approx = test.clade[[k]]$opts$cs.approx,
+                                 calc.obs.T = test.clade[[k]]$opts$calc.obs.T,
                                  use.forking = use.forking,
                                  nthreads = 1L)
+
+          # for now, we only store the clade details for the LAST setting of call.clade, pre.clade, and test.clade
+          # that is sufficient for most use cases
+          clade.details[[t]] <- attr(qf.res,"details")
+
           if(verbose){print(paste("Run TestCladeMat @ target",length(target.loci) - t + 1L,"took",signif(proc.time()[3] - start2,digits = 3),"seconds."))}
 
 
           # Store results
           temp <- 1:m + m * (test.clade[[k]]$test.config - 1L)
-          res[[t]][temp,c("num.sprigs","num.layers","k","prop.var","var.ratio","exit.status","precise","smt","rd","qform") ] <-
-            cbind(sprigs$num.sprigs,ro.res$num.layers,qf.res$k.qform,qf.res$prop.var,qf.res$var.ratio,
+          res[[t]][temp,c("num.sprigs","num.layers","obs.qform","obs.qform.T","exit.status","precise","smt","rd","qform") ] <-
+            cbind(sprigs$num.sprigs,ro.res$num.layers,qf.res$obs,qf.res$obs.T,
                   qf.res$exit.status,qf.res$precise,-log10(smt.res$p.value),-log10(ro.res$p.value),qf.res$qform)
-
 
         }
       }
@@ -287,6 +293,9 @@ TestLoci <- function(y, # test phenotypes y
   # calculate total locater signal
   res[,tot:=msse.test(smt,rd,qform,test.1.solo = TRUE)]
 
+  # this attribute is a list where the ith element is named after the locus.idx
+  names(clade.details) <- as.character(target.loci)
+  attr(res,"details") <- clade.details
   res
 }
 

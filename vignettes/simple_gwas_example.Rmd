@@ -43,7 +43,7 @@ pars <- Parameters(CalcRho(diff(map),s = 0.0001),mu = 1e-16) # specify HMM param
 test.opts <- data.frame("max.k" = 128,
                         "sw.thresh" = 6,
                         "eig.thresh" = 6.5,
-                        "cs.approx" = TRUE)
+                        "calc.obs.T" = TRUE)
 
 
 # Determine target loci based on SMT

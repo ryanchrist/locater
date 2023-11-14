@@ -346,19 +346,88 @@ calc_traces <- function(M, Q, sym.M = FALSE,
 }
 
 
+
+
+
+calc_remainder_parameters <- function(traces, sum_evalues, sum_evalues_2, abs_max_lambda){
+
+  C1 <- (traces$trace - sum_evalues) / abs_max_lambda # mean constraint
+  C2 <- (traces$hsnorm2 - sum_evalues_2) / (abs_max_lambda^2) # variance constraint
+
+  if(C2 <= 0){
+    return(list("a"=0,"b"=0,"mu"=0))
+  }
+
+  if(C1 > C2){
+    a <- C2
+    b <- 0
+    mu <- C1 - C2
+  } else if(C1 < -C2){
+    a <- 0
+    b <- C2
+    mu <- C1 + C2
+  } else {
+    a <- (C2 + C1) / 2
+    b <- C2 - a
+    mu <- 0
+  }
+
+  return(list("a"=a,"b"=b,"mu"=mu))
+}
+
+update_res_qform <- expression({
+
+  k_for_T <- if(is.finite(kstar)){kstar}else{length(evalues)}
+
+  if(calc.obs.T){
+    res$obs.T <- c(colSums(evalues[1:k_for_T]*(crossprod(e$vectors[,order_evalues[1:k_for_T]],y)^2)))
+  }
+
+  R_params <- calc_remainder_parameters(traces, sum_evalues, sum_evalues_2, abs_last_evalue)
+
+  cdf <- QForm::QFGauss(f.eta = c(evalues,
+                                  if(R_params$a){abs_last_evalue}else{double()},
+                                  if(R_params$b){-abs_last_evalue}else{double()}),
+                        delta2 = c(rep(delta2.T,k_for_T),
+                                   rep(delta2.R,length(evalues) - k_for_T),
+                                   if(R_params$a){R_params$a * if(is.finite(kstar)){delta2.R}else{min(delta2.R,delta2.T)}}else{double()},
+                                   if(R_params$b){R_params$b * if(is.finite(kstar)){delta2.R}else{min(delta2.R,delta2.T)}}else{double()}),
+                        df = c(rep(1,length(evalues)),
+                               if(R_params$a){R_params$a}else{double()},
+                               if(R_params$b){R_params$b}else{double()}),
+                        parallel.sapply = parallel.sapply)
+  temp_obs <- obs/nu - R_params$mu*abs_last_evalue*(1 + delta2.R)
+
+  res$qform <- -cdf(temp_obs, lower.tail = FALSE, log.p = TRUE)/log(10)
+
+  if(!is.null(attr(cdf,"tail.features")$a.l) && is.na(attr(cdf,"tail.features")$a.l)){ # left tail extrapolation failed if a.l is NA (need to check it's non-null first b/c is.na(NULL) returns logical(0))
+    to_substitute <- temp_obs < attr(cdf,"tail.features")$extrapolation.point.l # find any observations that are NA because they are below the left extrapolation point
+    res$qform[to_substitute] <- runif(sum(to_substitute),min = 0,max = cdf(attr(cdf,"tail.features")$extrapolation.point.l))
+    res$exit.status[to_substitute] <-  3L
+  }
+
+  details$a <- R_params$a
+  details$b <- R_params$b
+  details$extrapolation.point.l <- attr(cdf,"tail.features")$extrapolation.point.l
+})
+
+
 # see TestCladeMat help
 SimpleCalcBounds <- function(y,
                              matmul,
                              traces,
                              k = NULL, # vector of positive integers, if null, we just do SW approx taking k=0.
-                             min.prop.var = 0.98,
+                             prop.var.goal = 0.95,
                              var.ratio.goal = 0.95,
                              stop.eval.func = NULL,
-                             cs.approx = FALSE,
+                             nu = 1, # can be a VECTOR
+                             delta2.T = 0, # for now MUST be a SCALAR
+                             delta2.R = 0, # for now MUST be a SCALAR
+                             calc.obs.T = FALSE, # for now, just an indicator that we should return extra information
                              parallel.sapply = base::sapply){
 
   # if stop.eval.func is NULL, then we evaluate the quadratic form until we hit the max k or
-  # we hit the var.ratio.goal or we hit the min.prop.var
+  # we hit the var.ratio.goal or we hit the prop.var.goal
 
   # stop.eval.func allows us to stop evaluation of the quadratic form early.
   # it must take in a vector of p-values (or bounds on those p-values) and return
@@ -366,9 +435,11 @@ SimpleCalcBounds <- function(y,
 
 
   # return.status may be
-  # 2 -- "no_clade_structure" and return NAs
-  # 1 -- "numerically_unstable" -- at some point, results from eigendecomposition were incompatible with traces
-  # 0 -- "ok" -- either we've achieved min.prop.var or var.ratio.goal or we hit the max k
+  # 0 -- "ok" -- either we've achieved prop.var.goal or var.ratio.goal or we hit the max k
+  # 1 -- traces$hsnorm2 <= 0 so "no_clade_structure" and return NAs
+  # 2 -- "numerically_unstable eigendecomposition" -- at some point, results from eigendecomposition were incompatible with traces
+  # 3 -- estimation of left tail failed so returned p-value is based on a random uniform sampled between 0 and the left extrapolation point
+
   # we keep the return.status the same across all phenotypes because they're all relevant to all phenotypes.
   # even if say one phenotype can be ruled as uninteresting using k=5 but we don't run into numerical instability
   # until say k-10, it's still important for all phenotypes that numerical instability was encountered at this locus
@@ -387,36 +458,69 @@ SimpleCalcBounds <- function(y,
   }
 
 
+  m <- ncol(y)
+
+  if(length(nu)>1 & length(nu)!=m){stop("nu must either be a single scalar or a vector of length = ncol(y)")}
+  if(any(nu<=0)){stop("all nu must be >= 0")}
+  if(length(delta2.T)>1){stop("for now delta2.T must be a scalar")}
+  if(length(delta2.R)>1){stop("for now delta2.R must be a scalar")}
+
+  if(any(delta2.T<0) | any(delta2.R<0)){stop("all delta2.T and delta2.R must be >= 0")}
+
 
   # Initialize Output
-  m <- ncol(y)
-  res <- data.frame("prop.var" = rep(NA_real_,m),
-                    "var.ratio" = rep(NA_real_,m),
-                    "k.qform" = rep(NA_integer_,m),
-                    "qform" = rep(NA_real_,m),
-                    "exit.status" = rep(0L,m),
-                    "precise" = rep(FALSE,m)) # num instability in trace calculation or eigendecomposition
+  res <- data.frame("qform" = rep(NA_real_,m),
+                    "obs" = rep(NA_real_,m),
+                    "obs.T" = rep(NA_real_,m),
+                    "precise" = rep(FALSE,m),  # can these results be interpreted as precise QForm -log10 p-values?
+                    "exit.status" = rep(0L,m)) # explanation of any NAs one might see in qform, eg:
+                                               # num instability in trace calculation or eigendecomposition
+                                               # or in running FFT / estimating right tail using QForm package.
+
+  # Details needed to tune inflation parameters
+  details <- list(
+    # features of the clade matrix
+    "trace" = traces$trace,
+    "hsnorm2" = traces$hsnorm2,
+    "evalues" = NA_real_,
+    # some helper details about how the distribution was approximated and k.star defined, this information
+    # could be recovered from the details above and the input to this function, but it's helpful to have them
+    # precalculated
+    "kstar" = NA_integer_, # will be NA unless we get a precise estimate (we have a kstar <= k that satisfies the prop.var or var.ratio goals)
+    "a" = NA_real_,
+    "b" = NA_real_,
+    "extrapolation.point.l"= NA_real_)
+
+
 
   if(traces$hsnorm2 <=0){
-    res$exit.status <- 2L
+    res$exit.status <- 1L
+
+    attr(res,"details") <- details
     return(res)
   }
 
+  # Calculate observed statistics
   obs <- c(colSums(y * matmul(y,0)))
+  res$obs <- obs
+
 
   # Start with SW approximation
-  res$prop.var <- 0
-  res$k.qform <- 0L
   a0 <- traces$hsnorm2 / traces$trace
   nu0 <- traces$trace^2 / traces$hsnorm2
-  res$qform <- -pchisq(obs/a0,df = nu0,lower.tail = FALSE, log.p = TRUE)/log(10)
+  # here we divide by min of nu.T and nu.R in order to make this approximation as liberal as possible for initial screening
+  res$qform <- -pchisq((obs/nu)/a0,df = nu0,lower.tail = FALSE, log.p = TRUE)/log(10)
+
 
   if(is.null(k) || (length(k)==1 && k==0)){
+    attr(res,"details") <- details
     return(res)
   }
 
   if(!is.null(stop.eval.func)){
     if((num_args==1 && stop.eval.func(10^-res$qform)) || (num_args==2 && stop.eval.func(10^-res$qform,0))){
+
+      attr(res,"details") <- details
       return(res)
     }
   }
@@ -436,258 +540,68 @@ SimpleCalcBounds <- function(y,
   # define helper function and expression
 
   f <- function(k,args){
-    e_values <- RSpectra::eigs_sym(matmul,
-                                   k = k, n = n, args = args,
-                                   opts = list("ncv" = min(n, max( 4*((2*k+1)%/%4+1), 20)) ,
-                                               "retvec" = FALSE))$values
-    e_values[order(abs(e_values),decreasing = TRUE)]
+    RSpectra::eigs_sym(matmul,
+                       k = k, n = n, args = args,
+                       opts = list("ncv" = min(n, max( 4*((2*k+1)%/%4+1), 20)) ,
+                                   "retvec" = calc.obs.T))
   }
 
-  update_res_qform <- expression({
-
-    mu.R <- traces$trace - sum_evalues
-    var.R <- 2*(traces$hsnorm2 - sum_evalues_2)
-
-    if(var.R <= 0){
-      g <- SimpleCalcQFGauss(e_values,
-                             parallel.sapply)
-
-    } else {
-
-      if(cs.approx){
-
-        new.cs.approx <- FALSE
-
-        if(new.cs.approx){
-
-          # here we assume that k is at least 3 here.
-
-          x <- abs(tail(e_values,3))
-
-          if(x[3] >= x[1]){
-            # assume eigenvalues have reached plateau based on x[1]
-            lambda <- double()
-            abs_last_lambda <- x[1]
-            last_df <- floor(var.R / (2*abs_last_lambda^2))
-
-          } else if(x[3] >= x[2]){
-            # assume eigenvalues have reached plateau based on x[2]
-            lambda <- double()
-            abs_last_lambda <- x[2]
-            last_df <- floor(var.R / (2*abs_last_lambda^2))
-
-          } else {
-
-            if(x[2] >= 0.5*(x[3]+x[1]) ){
-              # assume eigenvalues are exponentially decaying based on x[3] and x[1] with floor of zero
-              # extrapolate out 30 eigenvalues
-              lambda <- (x[3])*sqrt(x[3]/x[1])^(1:30)
-
-            } else {
-              # estimate exponential decay and floor
-              alpha = max(0,(x[2]^2 - x[1]*x[3])/(2-x[1]-x[3])) # alpha must be >= 0
-              beta = min(1-sqrt(.Machine$double.eps),max(sqrt(.Machine$double.eps),(x[3]-alpha)/(x[2]-alpha)))
-              # beta must be in (0,1) and we back it off zero and 1 just a bit to have some numerical precision and robustness
-
-              # extrapolate out 30 eigenvalues
-              lambda <- (x[3]-alpha)*beta^(1:30) + alpha
-            }
-
-            if(var.R < 2*lambda[1]^2){
-
-              lambda <- double() # lambda will not quite capture all of the variance
-              abs_last_lambda <- 0
-              last_df <- 0L
-
-            } else {
-
-              lambda <- lambda[1:(match(TRUE,var.R < 2*cumsum(lambda^2),nomatch = length(lambda)+1L)-1L)]
-              abs_last_lambda <- lambda[length(lambda)]
-              last_df <- max(0L,floor((var.R - 2*sum(lambda^2))/(2*abs_last_lambda^2)))
-
-            }
-
-          }
-
-
-          # ASSIGN ANY REMAINING VARIANCE TO GAUSSIAN
-          # ATTENTION: sigma.gauss here IS allowed to be zero. mu.gauss directly shifts the distribution, so the
-          # the Gaussian component can be degenerate and the mean shift still occurs
-          sigma.gauss <- max(0,var.R - 2*sum(lambda^2) - 2*last_df*abs_last_lambda^2)
-
-
-
-          # ASSIGN SIGNS TO UNSIGNED EIGENVALUES
-          if(length(lambda) | last_df){
-
-            imputed_e_values <- c(rep(abs_last_lambda,ceiling(last_df/2)), lambda[seq(1,length(lambda),by=2)],
-                                  rep(abs_last_lambda,last_df-ceiling(last_df/2)), lambda[seq(2,length(lambda),by=2)])
-
-            cs_imputed_e_values <- c(0,cumsum(imputed_e_values))
-
-            set_to_make_positive <- seq_len(findInterval(mu.R, cs_imputed_e_values - rev(cs_imputed_e_values)))
-
-            imputed_e_values <- -imputed_e_values
-            imputed_e_values[set_to_make_positive] <- -imputed_e_values[set_to_make_positive]
-
-            sum_imputed_e_values <- sum(imputed_e_values)
-
-            extended_e_values <- c(e_values,imputed_e_values)
-          } else {
-            extended_e_values <- e_values
-          }
-
-          #browser()
-          #print(extended_e_values)
-
-          # MAKE ANY FINAL CORRECTIONS TO THE MEAN
-          mu.gauss <- traces$trace - sum(extended_e_values)
-
-          #
-          #
-          #   # Calculate size of each "resource" to draw on for negative eigenvalues
-          #
-          #   odd_lambda <- lambda[seq(1,length(lambda),by=2)]
-          #   even_lambda <- lambda[seq(2,length(lambda),by=2)]
-          #
-          #   A <- ceiling(last_df/2)*abs_last_lambda
-          #   B <- if(length(lambda)){sum(odd_lambda)}else{0}
-          #   C <- (last_df - A)*abs_last_lambda
-          #   D <- if(length(lambda)>=2){sum(even_lambda)}else{0}
-          #
-          #   sign_strategy <- findInterval(mu.R, c(-A-B-C-D, -A-B-C+D, -A-B+C+D, -A+B+C+D, A+B+C+D))
-          #
-          #   if(sign_strategy == 0){
-          #     # flip all signs
-          #     lambda <- -lambda
-          #     a <- 0
-          #     b <- last_df
-          #   } else if(sign_strategy == 1){
-          #
-          #     lambda[seq(1,length(lambda),by=2)]
-          #     a <- 0
-          #     b <- last_df
-          #   } else if(sign_strategy == 2){
-          #
-          #
-          #   } else if (sign_strategy == 3){
-          #
-          #     match(TRUE, mu.R-C-D rev(odd_lambda)
-          #     lambda[1:(match(TRUE,var.R < 2*cumsum(lambda^2),nomatch = length(lambda)+1L)-1L)]
-          #     lambda[seq(1,length(lambda),by=2)]
-          #
-          #     b <- A
-          #     a <- last_df - b
-          #
-          #   } else if (sign_strategy == 4){
-          #
-          #     b <- ceiling( (mu.R-B-C-D) / abs_last_lambda)
-          #     a <- last_df - b
-          #
-          #   } else if (sign_strategy == 5){
-          #     a <- last_df
-          #     b <- 0
-          #   }
-          #
-          # }
-
-
-
-        } else {
-
-          lambda <- abs(e_values[length(e_values)])
-
-          a.plus.b <- floor(var.R / (2*lambda^2))
-
-          if(a.plus.b==0){
-
-            extended_e_values <- e_values
-            mu.gauss <- mu.R
-            sigma.gauss <- sqrt(var.R)
-
-          }else{
-
-            target_mean_in_lambda <- mu.R / lambda
-
-            if(target_mean_in_lambda >= a.plus.b){
-              a <- a.plus.b
-              b <- 0
-            } else if(target_mean_in_lambda <= -a.plus.b){
-              a <- 0
-              b <- a.plus.b
-            } else {
-              if(a.plus.b%%2){
-                # map target_mean_in_lambda to nearest odd integer (excluding 0)
-                a.minus.b <- sign(target_mean_in_lambda)*(2*pmax(1,round((abs(target_mean_in_lambda)+1)/2))-1)
-              }else {
-                # map target_mean_in_lambda to nearest even integer (possibly 0)
-                a.minus.b <- sign(target_mean_in_lambda)*(2*round(abs(target_mean_in_lambda)/2))
-              }
-
-              a <- (a.plus.b + a.minus.b) / 2
-              b <- a.plus.b - a
-            }
-
-            print(paste("Using remainder approx. with parameters",a,",",b))
-
-            extended_e_values <- c(e_values,rep(lambda,a),rep(-lambda,b))
-            sigma.gauss <- sqrt(var.R - 2*(a+b)*lambda^2)
-            mu.gauss <- mu.R - lambda*(a-b)
-          }
-
-        }
-      } else {
-        extended_e_values <- e_values
-        mu.gauss <- mu.R
-        sigma.gauss <- sqrt(var.R)
-      }
-
-      if(sigma.gauss > 0){
-        g <- SimpleCalcQFGauss(extended_e_values,
-                               mu.gauss = mu.gauss,
-                               sigma.gauss = sigma.gauss,
-                               parallel.sapply)
-      } else {
-        g <- SimpleCalcQFGauss(e_values,
-                               parallel.sapply)
-      }
-    }
-
-    res$qform <- g(obs)
-  })
 
 
   # keep checking if we can / need to improve the approximation
   for(j in 1:length(k)){
 
-    e_values <- f(k[j], 0) # returned pre-sorted from largest to smallest magnitude
-    sum_evalues <- sum(e_values)
-    sum_evalues_2 <- sum(e_values^2)
+    e <- f(k[j], 0) # returned pre-sorted from largest to smallest magnitude
+
+    order_evalues <- order(abs(e$values),decreasing = TRUE)
+    evalues <- e$values[order_evalues]
+    sum_evalues <- sum(evalues)
+    sum_evalues_2 <- sum(evalues^2)
+    abs_last_evalue <- abs(evalues[k[j]])
 
     # check whether returned eigenvalues look incompatible with traces (numerical instability)
     if(sum_evalues_2/k[j] < traces$hsnorm2/length(traces$diag) |
-       abs(traces$trace - sum_evalues) > abs(e_values[k[j]])*(n-k[j])){
-      res$exit.status <- 1L
+       abs(traces$trace - sum_evalues) >  abs_last_evalue*(n-k[j])){
+
+      res$exit.status <- 2L
+
+      attr(res,"details") <- details
       return(res)
     }
 
-    # accept eigenvalues
-    res$prop.var <- sum_evalues_2/traces$hsnorm2
-    if(k[j] > 1){res$var.ratio <- (e_values[k[j]]/e_values[k[j]-1])^2}
-    res$k.qform <- k[j]
+
+    details$evalues <- evalues
+
+    # calculate kstar
+
+    kstar_prop_explained <- match(TRUE,cumsum(evalues^2)>=traces$hsnorm2*prop.var.goal)
+    if(is.na(kstar_prop_explained)){kstar_prop_explained <- Inf}
+    kstar_var_ratio <- if(k[j] == 1){Inf} else {
+      match(TRUE,(evalues[-1]/evalues[-k[j]])^2 >= var.ratio.goal)
+    }
+    if(is.na(kstar_var_ratio)){kstar_var_ratio <- Inf}
+
+    kstar <- min(kstar_prop_explained,kstar_var_ratio)
+
 
     # TEST IF WE'VE ACHIEVED A PRECISE APPROX SO WE CAN STOP
-    if(res$prop.var[1] >= min.prop.var | (k[j]>1 && res$var.ratio[1] >= var.ratio.goal)){
+    if(is.finite(kstar)){
       eval(update_res_qform)
+
       res$precise <- TRUE
+
+      details$kstar <- kstar
+
+      attr(res,"details") <- details
       return(res)
     }
-
     # TRY TO STOP EARLY IF NO PHENOTYPE LOOKS SIGNIFICANT
 
     if(!is.null(stop.eval.func)){
       eval(update_res_qform)
+
       if((num_args==1 && stop.eval.func(10^-res$qform)) || (num_args==2 && stop.eval.func(10^-res$qform,0))){
+        attr(res,"details") <- details
         return(res)
       }
     }
@@ -697,6 +611,8 @@ SimpleCalcBounds <- function(y,
   # WE'VE HIT MAX K
   # so evaluate and exit with precise=FALSE.
   eval(update_res_qform)
+
+  attr(res,"details") <- details
   return(res)
 
 

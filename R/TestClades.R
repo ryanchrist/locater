@@ -33,10 +33,10 @@
 #' @export
 TestCladeMat <- function(y, M, Q,
                          k = NULL, # c(8,32,128,512)
-                         min.prop.var = 0.98,
-                         var.ratio.goal = 0.9,
+                         prop.var.goal = 0.95,
+                         var.ratio.goal = 0.95,
                          stop.eval.func = NULL,
-                         cs.approx = FALSE,
+                         calc.obs.T = FALSE,
                          use.forking = FALSE,
                          nthreads = 1L){
 
@@ -63,10 +63,10 @@ TestCladeMat <- function(y, M, Q,
   SimpleCalcBounds(y,
                    matmul,
                    traces,
-                   min.prop.var = 0.98,
-                   var.ratio.goal = 0.98,
+                   prop.var.goal = prop.var.goal,
+                   var.ratio.goal = var.ratio.goal,
                    k = k, # vector of positive integers, if null, we just do SW approx taking k=0.
                    stop.eval.func = stop.eval.func,
-                   cs.approx = cs.approx,
+                   calc.obs.T = calc.obs.T,
                    parallel.sapply = base::sapply)
 }
