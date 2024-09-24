@@ -72,7 +72,7 @@ res.p1 <- res[phenotype==1,c("locus.idx","tot")]
 COLORS <- palette.colors(3)
 plot(0,0, type = "n", 
      ylim=range(pretty(c(0,max(c(smt.p1,res.p1$tot),na.rm=T)))),
-     xlim = range(map),
+     xlim = range(pretty(map)),
      las=1,bty="n",
      ylab = "-log10 p-value", xlab = "cM position")
 points(map,smt.p1,col=COLORS[1],pch=20)

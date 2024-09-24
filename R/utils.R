@@ -75,8 +75,8 @@ fast_smt <- function(y,x,Q){
 
   -pf(q = - Z2*nu / sweep(Z2,2,sumsq0,"-"), df1 = 1, df2 = nu, lower.tail = FALSE, log.p = TRUE)/log(10)
 }
-#
-# # Example:
+
+# Example:
 # n <- 10000
 # p <- 2000
 # #p <- 1
@@ -88,6 +88,26 @@ fast_smt <- function(y,x,Q){
 # Q <- qr.Q(qr(A))
 # system.time(neglog10pval <- fast_smt(y,x,Q))
 # hist(10^-neglog10pval) # uniform p-values under the null
+# plot(qexp(ppoints(length(neglog10pval)),rate = log(10)),sort(neglog10pval))
+# abline(0,1)
+#
+# # comparison against lm -- perfect match
+# summary(lm(y[,1]~0+A+x[1,]))
+# str(summary(lm(y[,12]~0+A+x[140,])))
+#
+# lm_neglog10pval <- matrix(0,nrow(neglog10pval),12)
+#
+# for(j in 1:12){
+#   for(i in 1:p){
+#     lm_neglog10pval[i,j] <- -log10(summary(lm(y[,j]~0+A+x[i,]))$coefficients[7,4])
+#   }
+#   print(j)
+# }
+#
+# lm_neglog10pval <- lm_neglog10pval[,1:12]
+# plot(lm_neglog10pval,neglog10pval[,1:12]);abline(0,1)
+# all.equal(lm_neglog10pval,neglog10pval[,1:12])
+
 
 rank2gauss <- function(x){
   # x is a vector of ranks with no ties

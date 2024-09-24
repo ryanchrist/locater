@@ -40,7 +40,7 @@ n <- N() / ploidy
 HMM_pars <- as.data.table(expand.grid("neglog10Ne" = c(-2),"neglog10mu" = c(4),
                                       "eff.num.clades" = NA_real_,
                                       "num.sprigs" = NA_integer_,
-                                      "rd" = NA_real_,"qform"=NA_real_,"signal" = NA_real_)))
+                                      "rd" = NA_real_,"qform"=NA_real_,"signal" = NA_real_))
 HMM_pars$par_id <- 1:nrow(HMM_pars)
 
 # set number of samples / tuning parameter
