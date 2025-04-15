@@ -9,10 +9,10 @@ TestCladeMat(
   M,
   Q,
   k = NULL,
-  min.prop.var = 0.98,
-  var.ratio.goal = 0.9,
+  prop.var.goal = 0.95,
+  var.ratio.goal = 0.95,
   stop.eval.func = NULL,
-  cs.approx = FALSE,
+  calc.obs.T = FALSE,
   use.forking = FALSE,
   nthreads = 1L
 )
@@ -26,17 +26,17 @@ TestCladeMat(
 
 \item{k}{a vector of non-negative integers, number of eigenvalues to calculate to try to approximate the null distribution, see Details.}
 
-\item{min.prop.var}{a double in [0,1], if we've obtained enough eigenvalues to explain at least this minimum proportion of variance, then we can trust our approximation and stop calculating eigenvalues, see Details.}
-
 \item{var.ratio.goal}{a double in [0,1], if lambda_k / lambda_{k-1} >= var.ratio.goal, the spectrum has plateaued, then we can trust our approximation and stop calculating eigenvalues, see Details.}
 
 \item{stop.eval.func}{a function that returns TRUE if all associations can be ruled insignificant and eigendecomposition stopped early, see Details.}
 
-\item{cs.approx}{a logical, should a difference of chi-squares be used to try to approximate remainder or should all of the remainder be left to a Gaussian approximation (the default)}
-
 \item{use.forking}{a logical, should forking be used during underlying FFT?}
 
 \item{nthreads}{a positive integer, how many cores in multithreaded routines?}
+
+\item{min.prop.var}{a double in [0,1], if we've obtained enough eigenvalues to explain at least this minimum proportion of variance, then we can trust our approximation and stop calculating eigenvalues, see Details.}
+
+\item{cs.approx}{a logical, should a difference of chi-squares be used to try to approximate remainder or should all of the remainder be left to a Gaussian approximation (the default)}
 }
 \value{
 With with p-values for Clade Testing

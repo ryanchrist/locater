@@ -494,8 +494,8 @@ SimpleCalcBounds <- function(y,
                     "obs.T" = rep(NA_real_,m),
                     "precise" = rep(FALSE,m),  # can these results be interpreted as precise QForm -log10 p-values?
                     "exit.status" = rep(0L,m)) # explanation of any NAs one might see in qform, eg:
-                                               # num instability in trace calculation or eigendecomposition
-                                               # or in running FFT / estimating right tail using QForm package.
+  # num instability in trace calculation or eigendecomposition
+  # or in running FFT / estimating right tail using QForm package.
 
   # Details needed to tune inflation parameters
   details <- list(
@@ -793,29 +793,188 @@ dist2design <- function(d){
 }
 
 
-rdd <- function(y,X){
+# rdd <- function(y,X){
+#
+#   if(!is.matrix(y)){
+#     if(!is.numeric(y)){stop("y must be a numeric vector or a matrix")}
+#     y <- matrix(y,ncol=1)
+#   }
+#   m <- ncol(y)
+#   if(!ncol(X)){return(rep(NA_real_,m))}
+#   X <- rdistill::std_sparse_matrix(X)
+#   p1 <- locater:::ortho_part_clades(X)
+#
+#   p <- ncol(X)
+#
+#   k_raw <- 2^floor(log2(p))
+#
+#   k_filt <- min(ceiling(0.1*p),10)
+#
+#   rd_log10_pval <- rep(0,m)
+#   for(ii in 1:m){
+#     rd_log10_pval[ii] <- -log10(rdistill::rdistill(y = y[,ii], x = X, l = p1, scale_col = FALSE,
+#                                                    filt_opts = list("method" = "thresh", "t" = qbeta(0.05,k_filt,p-k_filt+1)),
+#                                                    test_opts = list("k" = min(32,k_raw)))$gpval_layers)
+#   }
+#   rd_log10_pval
+# }
+
+
+#' Parallelized Stable Distillation for the OLS Model
+#'
+#' Distill multiple outcome vectors under the same null and alternative OLS model (in parallel)
+#'
+#' Parallelized implementation of the OLS distillation routine with simple quantile filter proposed in Section 4 of \link{https://arxiv.org/pdf/2212.12539} .
+#'
+#' @param y a n x m matrix of outcome vectors, one outcome per column
+#' @param x a n x p matrix of predictors (may be passed as a \code{sparseMatrix}, see the \code{Matrix} package)
+#' @param Q an orthogonal matrix whose columns span the column space of the background covariates
+#' @param max_num_causal a non-negative integer, maximum number of causal/active predictors to search for
+#' @param p_order a vector of non-negative integers, if provided, columns of \code{x} will be distilled in the order \code{p_order[1]},\code{p_order[2]},..
+#' @return
+#'   a list containing
+#'
+#'   \code{p_value} a vector of m p-values from the Renyi Outlier Test, in the same order as the outcome vectors provided
+#'
+#'   \code{u} a p x m matrix of extracted p-values
+#'
+#'   \code{signs} a p x m matrix of effect signs corresponding the extracted p-values \code{u}. Note, these signs are useful for post-hoc interpretation but are NOT extracted in the SD procedure so they are NOT independent of \code{u}.
+#'
+#'   \code{y} a n x p matrix of distilled outcome vectors y left over as a biproduct of distillation (independent of \code{u}) and ready for downstream testing
+#'
+#' @export
+distill_pivot_par <- function(y, x, Q, max_num_causal,
+                              p_order = seq_len(ncol(x)), ...){
+
+  # here we do not need assume that the subspace spanned by Q has been projected out of y
 
   if(!is.matrix(y)){
-    if(!is.numeric(y)){stop("y must be a numeric vector or a matrix")}
-    y <- matrix(y,ncol=1)
+    if(is.vector(y)){y <- matrix(y,ncol=1)} else {
+      stop("y must be a base R matrix or vector")
+    }
   }
+
+  n <- nrow(y)
   m <- ncol(y)
-  if(!ncol(X)){return(rep(NA_real_,m))}
-  X <- rdistill::std_sparse_matrix(X)
-  p1 <- locater:::ortho_part_clades(X)
+  p <- ncol(x)
+  q <- ncol(Q)
+  shape1 <- (n-q-1)/2
 
-  p <- ncol(X)
+  max_num_causal <- min(p,max_num_causal)
+  t <- qbeta(0.01, shape1 = max_num_causal, shape2 = p - max_num_causal + 1) # backwards?
 
-  k_raw <- 2^floor(log2(p))
+  Qty <- crossprod(Q,y) # q by m
+  omega <- colSums(y^2) - colSums(Qty^2) # m vector
 
-  k_filt <- min(ceiling(0.1*p),10)
+  # moved this into the loop to save on memory when p is huge
+  #xJ <- crossprod(Q,x) # q by p
+  #xd <- colSums(x^2) - colSums(xJ^2) # p vector
 
-  rd_log10_pval <- rep(0,m)
-  for(ii in 1:m){
-    rd_log10_pval[ii] <- -log10(rdistill::rdistill(y = y[,ii], x = X, l = p1, scale_col = FALSE,
-                                                   filt_opts = list("method" = "thresh", "t" = qbeta(0.05,k_filt,p-k_filt+1)),
-                                                   test_opts = list("k" = min(32,k_raw)))$gpval_layers)
+  u <- signs <- matrix(0,nrow=p,ncol=m)
+
+  #beta <- rep(1,m) # coefficient of Y that gets carried around with Y to avoid multiplying all elements of Y
+
+  for(i in p_order){
+
+    xx <- x[,i,drop=FALSE]
+    xx_index <- xx@i + 1L
+    xx_value <- xx@x
+
+    #     i_range <-x@p[c(i,i+1L)]
+    #     idx <- seq.int((i_range[1]+1L),i_range[2])
+    #     xx <- Matrix::sparseVector(x@x[idx],x@i[idx]+1L,n)
+
+    Qtx <- colSums(Q[xx_index,,drop=FALSE] * xx_value)
+    sumxx2 <- sum(xx^2)
+    sigmax2 <- sumxx2 - sum(Qtx^2)
+
+    # if 99% of the variance of x can be explained by the background covariates, skip x
+    if(sigmax2/sumxx2 < 1e-2){u[i,] <- NA_real_; next}
+
+    sigmax <- sqrt(sigmax2) # scalar
+
+    # extraction
+    #w <- (beta * Matrix::crossprod(y,xx) - Matrix::crossprod(Qty,Qtx)) / sigmax # m vector, important to normalize here b/c we use w later
+    w <- (colSums(y[xx_index,,drop=FALSE] * xx_value) - crossprod(Qty,Qtx)) / sigmax # m vector, important to normalize here b/c we use w later
+    w2 <- w^2
+
+    nu <- omega - w2 # m vector
+
+    if(any(nu<=0)){stop("nu cannot be negative. numerical instability? check y and x.")}
+
+    b <- as.vector(nu/omega) # m vector
+    u_prime <- pbeta(b,shape1 = shape1, shape2 = 1/2)
+
+    # filtration
+    not_an_outlier <- u_prime >= t
+    u[i,] <- data.table::fifelse(not_an_outlier,runif(m,min=t),u_prime)
+    u_tilde <- data.table::fifelse(not_an_outlier,
+                                   data.table::fifelse(runif(m)<t,t*(u_prime - t) / (1-t),u_prime),
+                                   runif(m))
+    signs[i,] <- sign(as.vector(w))
+    # if(u_prime < t){
+    #   u <- u_prime
+    #   u_tilde <- runif(1)
+    # } else {
+    #   u <- runif(1,min=t)
+    #   u_tilde <- if(runif(1)<t){t*(u_prime - t) / (1-t)}else{u_prime}
+    # }
+
+    # inversion
+    to_update <- which(u_tilde!=u_prime)
+    if(length(to_update)){
+
+      b_tilde <- qbeta(u_tilde, shape1 = shape1, shape2 = 1/2)
+
+
+      nu_tilde <- omega * b_tilde
+      w2_tilde <- omega - nu_tilde
+
+      w_tilde <- sign(w) * sqrt(w2_tilde)
+
+      alpha <- sqrt(nu_tilde/nu)
+
+
+      # could rewrite the rest of this loop to reduce memory greationg / destruction
+      #y <- alpha * y + ((w_tilde - alpha * w)/sigmax) * xx
+
+      # y_new <- Matrix::colScale(y[,to_update,drop=FALSE],alpha[to_update]) +
+      #   Matrix::kronecker(xx,Matrix::Matrix(((w_tilde - alpha * w)/sigmax)[to_update],nrow=1))
+      # y[,to_update] <- y_new
+      # Qty[,to_update] <- Matrix::crossprod(Q,y_new) # this crossprod can be avoided using Q^t %*% X which is already calculated
+
+      # for(j in to_update){
+      #   yy <- y[,j] * alpha[j]
+      #   temp.idx <- xx@i+1L
+      #   yy[temp.idx] <- yy[temp.idx] + ((w_tilde[j] - w[j]*alpha[j])/sigmax)*xx@x
+      #   y[,j] <- yy
+      #   Qty[,j] <- Matrix::crossprod(Q,y[,j])
+      # }
+      #
+
+      y[,to_update] <- scale(y[,to_update,drop=FALSE], center = FALSE, scale = 1/alpha[to_update])
+      y[xx_index,to_update] <- y[xx_index,to_update,drop=FALSE] + xx_value %o% ((w_tilde[to_update] - w[to_update]*alpha[to_update])/sigmax)
+      Qty[,to_update] <- crossprod(Q,y[,to_update,drop=FALSE])
+
+
+      # y[,to_update] <- y[,to_update,drop=FALSE] + Matrix::kronecker(xx,Matrix::Matrix(((w_tilde/alpha - w)/sigmax)[to_update],nrow=1))
+      # Qty[,to_update] <- Matrix::crossprod(Q,y_new)
+      #
+      # beta <- beta / alpha
+
+    }
   }
-  rd_log10_pval
-}
 
+  list("p_value" = apply(u,2,function(x){
+    if(anyNA(x)){x <- x[-which(is.na(x))]}
+    if(!length(x)){ return(NA_real_) }
+    if(!all(is.finite(x))){
+      warning("infinite p-values detected in output from distillation, returning NA...")
+      return(NA_real_)
+    }
+    renyi::renyi(x, k = max_num_causal)$p_value
+  }),
+  "u" = u,
+  "signs" = signs,
+  "y" = as.matrix(y))
+}
