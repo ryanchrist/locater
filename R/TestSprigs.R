@@ -600,7 +600,6 @@ old_test_sprigs <- function(y,sprigs, k.max, ploidy = 2L){
   )
 }
 
-#' @export
 old_TestSprigs <- function(y, sprigs, k.max = 2^min(max(4,ceiling(log2(sprigs$num.sprigs/100))),7) , ploidy = 2L, use.forking = FALSE, nthreads = 1L){
 
   if(sprigs$num.sprigs < 64){ # require there to be at least 64 sprigs to run

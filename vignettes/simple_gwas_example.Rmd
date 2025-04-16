@@ -101,9 +101,9 @@ The `locater` package API exposes all of the sub-routines needed to for running 
 
 
 ## Testing inferred discrete clade genotypes
-Building on our example above, we can test inferred discrete clade genotypes with Stable Distillation with a direct call to the `rdistill` package. Let `y` be a `n \times m` matrix of phenotypes, `x` be a `n \times p` matrix of predictors (inferred clade genotypes), and `Q` be the matrix from the QR decomposition of the `n \times q` background covariate matrix `A = QR`. By default, we request that the Renyi Outlier Test search for at most 16 distinct active predictors among the colums of `x`. Below we start by simulating a set of inferred clade genotypes in order to run the procedure, but we assume that those would come from an ancestry inference engine. Among theose simulated genotypes, we include the 4 genotypes from above (in matrix `g`) that actually affect the first phenotype.
+Building on our example above, we can test inferred discrete clade genotypes with Stable Distillation with a call to the `distill_pivot_par` function. Let `y` be a `n \times m` matrix of phenotypes, `x` be a `n \times p` matrix of predictors (inferred clade genotypes), and `Q` be the matrix from the QR decomposition of the `n \times q` background covariate matrix `A = QR`. By default, we request that the Renyi Outlier Test search for at most 16 distinct active predictors among the colums of `x`. Below we start by simulating a set of inferred clade genotypes in order to run the procedure, but we assume that those would come from an ancestry inference engine. Among theose simulated genotypes, we include the 4 genotypes from above (in matrix `g`) that actually affect the first phenotype.
 
-```{r calling_rdistill, eval=TRUE}
+```{r calling_distill, eval=TRUE}
 
 p <- 50 # number of inferred genotypes
 num_true_causal <- nrow(g)
@@ -115,7 +115,7 @@ x <- cbind(t(g),Matrix::sparseMatrix(i = sample.int(n,10*(p-num_true_causal),rep
 
 Q <- qr.Q(qr(A))
 
-sd_res <- rdistill::rdistill_pivot_par(y, x, Q, max_num_causal = 16)
+sd_res <- distill_pivot_par(y, x, Q, max_num_causal = 16)
 
 ```
 Below we plot the $-log_{10}$ p-value obtained of running parallelized Stable Distillation for each of our 20 simulated phenotypes as a bar plot.
@@ -124,7 +124,7 @@ Below we plot the $-log_{10}$ p-value obtained of running parallelized Stable Di
 barplot(-log10(sd_res$p_value),names.arg=1:m,xlab="Phenotype",ylab="-log10 SD p-value",las=1,cex.names=0.8)
 ```
 
-Only the first phenotype, the one driven by our simulated causal variants, has a very significant SD p-value. `sd_res` will contain a list with lots of other information alongside `m` p-values plotted above. More information about this function is available on it's manual page, accessible by typing `?rdistill::rdistill_pivot_par` into `R`. 
+Only the first phenotype, the one driven by our simulated causal variants, has a very significant SD p-value. `sd_res` will contain a list with lots of other information alongside `m` p-values plotted above. More information about this function is available on it's manual page, accessible by typing `?locater::distill_pivot_par` into `R`. 
 
 ## Testing inferred local relatedness matrices
 Building on example of testing inferred discrete clade genotypes above, we can test inferred local relatedness matrices with the `TestCladeMat` function in the `locater` package. We assume that we have a inferred local relatedness matrix `M` returned by some ancestry inference engine. Here, we just construct a simple `M` from the genotypes simulated for our Stable Distillation example above. Note, `M` must be passed to `TestCladeMat` as a base `R` `matrix`. As above, we account for the background covaraites via `Q`. The argument `k` specifies the maximum number of eigenvalues of `(I-QQ')M(I-QQ')` that we will budget in hopes of gaining precise p-value estimates. `TestCladeMat` allows for much finer control of this process; please see the documentation by typing `?locater::TestCladeMat` into `R` for more details. Here we start by setting `k=0` which means `TestCladeMat` will just return the Satterthwaite p-values.

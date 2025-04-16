@@ -301,7 +301,6 @@ TestLoci <- function(y, # test phenotypes y
 
 
 
-#' @export
 TestLoci_h <- function(y, # test phenotypes y
                        pars, # with HMM parameters pars
                        target.loci = 1:L(), # at loci target.loci

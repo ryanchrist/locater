@@ -1,11 +1,10 @@
 Package: locater
 Type: Package
 Title: Locus Orthogonalized Clade & Ancestry TEsting in R
-Version: 0.1.0
+Version: 1.0.0
 Author: Ryan Christ
 Maintainer: Ryan Christ <ryan.christ7@gmail.com>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
+Description: Package for testing tree structures (represented via discrete and/or via relatedness matrices) for association with traits of interest.
 License: GPL (>= 3)
 Encoding: UTF-8
 LazyData: true
