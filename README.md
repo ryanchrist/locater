@@ -1,9 +1,8 @@
 # Introduction
 
-`locater` is an R package for testing tree structures (represented via discrete and/or via relatedness matrices) for association with traits of interest. Please see our pre-print describing the underlying LOCATER methodology here: https://www.biorxiv.org/content/10.1101/2024.09.30.615852 .
+`locater` is an R package for testing tree structures (represented via a set of discrete clades and/or a relatedness matrix) for association with traits of interest. Please see our pre-print describing the underlying LOCATER methodology here: https://www.biorxiv.org/content/10.1101/2024.09.30.615852 . We recently applied `locater` to a richly phenotyped whole genome sequencing described in our pre-print here https://www.medrxiv.org/content/10.1101/2024.11.04.24316696.
 
-While `locater` natively interacts with the local ancestry inference software package `kalis`, available here https://github.com/louisaslett/kalis/, the package exports functions exposing all internal testing routines so that LOCATER may be used in conjunction with other local genealogy inference software without requiring the user to re-implement those core testing routines. The exported function `TestLoci` is a wrapper function used for testing target variants along a chromosome; it provides a template for users hoping to adapt `locater` to use a different ancestry inference engine or otherwise customize the testing routine.
-
+While `locater` natively interacts with the local ancestry inference software package `kalis`, available here https://github.com/louisaslett/kalis/, the package exports functions exposing all internal testing routines so that LOCATER may be used in conjunction with other local genealogy inference engines/software. The exported function `TestLoci` is a wrapper function used for testing target variants along a chromosome; it provides a template for users hoping to adapt `locater` to use a different ancestry inference engine or otherwise customize the testing routine.
 
 # Installation Instructions
 
