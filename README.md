@@ -22,7 +22,7 @@ remotes::install_github("louisaslett/kalis",
 if(!require(kalis)){stop("kalis was not properly installed")}
 ```
 
-## Install Dependencies and `locater` from out public r-universe respository
+## Install Dependencies from public r-universe respository
 
 ```{r install_from_r_universe,eval=FALSE}
 install.packages("QForm", repos = "https://ryanchrist.r-universe.dev")
@@ -30,8 +30,12 @@ if(!require(QForm)){stop("Qform was not properly installed")}
 
 install.packages("renyi", repos = "https://ryanchrist.r-universe.dev")
 if(!require(renyi)){stop("renyi was not properly installed")}
+```
 
-install.packages("locater", repos = "https://ryanchrist.r-universe.dev")
+## Install LOCATER from GitHub
+```{r install_locater,eval=FALSE}
+install.packages("remotes")
+remotes::install_github("ryanchrist/locater")
 if(!require(locater)){stop("locater was not properly installed")}
 ```
 
