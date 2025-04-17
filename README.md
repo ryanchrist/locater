@@ -4,14 +4,17 @@
 
 While `locater` natively interacts with the local ancestry inference software package `kalis`, available here https://github.com/louisaslett/kalis/, the package exports functions exposing all internal testing routines so that LOCATER may be used in conjunction with other local genealogy inference engines/software. The exported function `TestLoci` is a wrapper function used for testing target variants along a chromosome; it provides a template for users hoping to adapt `locater` to use a different ancestry inference engine or otherwise customize the testing routine.
 
-# Installation Instructions
-
-## Docker Image
+# Try out locater via Docker
 To try out locater immediately, check out our docker image available at https://hub.docker.com/repositories/rchrist7 .  On a system with Docker installed, R can be launched in a interactive session under this image by running:  
 ```{bash docker, eval=FALSE}
 docker run -it rchrist7/mini-shark /bin/bash R
 ```
 Call  `require(locater)` in the R session to load locater.  To get started, a simple vignette is available under the Articles tab at https://ryanchrist.github.io/locater/ alongside the documentation. 
+
+
+# Installation Instructions
+
+For those aiming to install locater on their own system or image, please follow the steps below.
 
 ## Install R 
 If not already installed, please visit https://posit.co/download/rstudio-desktop/ for guidance. Once R is installed, we suggest installing them in the order below by copying and pasting the following R commands into R.
