@@ -12,8 +12,8 @@ RoxygenNote: 7.3.2
 Imports: 
     data.table,
     kalis,
-    QForm,
-    renyi,
+    QForm (>= 0.2.2),
+    renyi (>= 1.0.0),
     RSpectra
 Suggests: 
     rmarkdown,
@@ -22,3 +22,8 @@ VignetteBuilder: knitr
 Depends: 
     R (>= 2.10)
 URL: https://ryanchrist.github.io/locater/
+Remotes:  
+    github::ryanchrist/renyi,
+    github::ryanchrist/QForm,
+    github::louisaslett/kalis,
+    bioc::rhdf5
