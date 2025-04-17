@@ -6,6 +6,13 @@ While `locater` natively interacts with the local ancestry inference software pa
 
 # Installation Instructions
 
+## Docker Image
+To try out locater immediately, check out our docker image available at https://hub.docker.com/repositories/rchrist7 .  On a system with Docker installed, R can be launched in a interactive session under this image by running:  
+```{bash docker, eval=FALSE}
+docker run -it rchrist7/mini-shark /bin/bash R
+```
+Call  `require(locater)` in the R session to load locater.  To get started, a simple vignette is available under the Articles tab at https://ryanchrist.github.io/locater/ alongside the documentation. 
+
 ## Install R 
 If not already installed, please visit https://posit.co/download/rstudio-desktop/ for guidance. Once R is installed, we suggest installing them in the order below by copying and pasting the following R commands into R.
 
