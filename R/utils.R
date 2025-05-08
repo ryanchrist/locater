@@ -1,3 +1,8 @@
+#' Collapse a matrix of haplotypes to genotypes
+#' @param haps a vector or \code{p} x \code{N} matrix of 1s and 0s for \code{N} haplotypes observed at \code{p} loci
+#' @param ploidy the ploidy of the underlying organisms, haplotypes corresponding to the same organism are assumed to be stored consecutively in \code{haps}. Default = 2 (diploid)
+#' @param method a character in "additive", "recessive", or "dominant" giving the model of inheritance that should be tested, default = "additive"
+#' @return a matrix of genotypes with dimensions \code{p} x \code{n} = \code{N} / \code{ploidy}
 Haps2Genotypes <- function(haps, # vector or p x N matrix of 1s and 0s
                            ploidy = 2L,
                            method = "additive"){
@@ -826,22 +831,21 @@ dist2design <- function(d){
 #'
 #' Parallelized implementation of the OLS distillation routine with simple quantile filter proposed in Section 4 of \link{https://arxiv.org/pdf/2212.12539} .
 #'
-#' @param y a n x m matrix of outcome vectors, one outcome per column
+#' @param y a n x m matrix of phenotype vectors, one phenotype per column
 #' @param x a n x p matrix of predictors (may be passed as a \code{sparseMatrix}, see the \code{Matrix} package)
 #' @param Q an orthogonal matrix whose columns span the column space of the background covariates
 #' @param max_num_causal a non-negative integer, maximum number of causal/active predictors to search for
 #' @param p_order a vector of non-negative integers, if provided, columns of \code{x} will be distilled in the order \code{p_order[1]},\code{p_order[2]},..
-#' @return
-#'   a list containing
+#' @return a list containing
+#'  \itemize{
+#'  \item \code{p_value} a vector of m p-values from the Renyi Outlier Test, in the same order as the phenotype vectors provided
 #'
-#'   \code{p_value} a vector of m p-values from the Renyi Outlier Test, in the same order as the outcome vectors provided
+#'   \item \code{u} a p x m matrix of extracted p-values
 #'
-#'   \code{u} a p x m matrix of extracted p-values
+#'   \item \code{signs} a p x m matrix of effect signs corresponding the extracted p-values \code{u}. Note, these signs are useful for post-hoc interpretation but are NOT extracted in the SD procedure so they are NOT independent of \code{u}.
 #'
-#'   \code{signs} a p x m matrix of effect signs corresponding the extracted p-values \code{u}. Note, these signs are useful for post-hoc interpretation but are NOT extracted in the SD procedure so they are NOT independent of \code{u}.
-#'
-#'   \code{y} a n x p matrix of distilled outcome vectors y left over as a biproduct of distillation (independent of \code{u}) and ready for downstream testing
-#'
+#'   \item \code{y} a n x m matrix of distilled phenotype vectors y left over as a biproduct of distillation (independent of \code{u}) and ready for downstream testing
+#' }
 #' @export
 distill_pivot_par <- function(y, x, Q, max_num_causal,
                               p_order = seq_len(ncol(x)), ...){

@@ -2,15 +2,15 @@
 % Please edit documentation in R/TestMarker.R
 \name{FitNull}
 \alias{FitNull}
-\title{Fit Null Linear Model}
+\title{Fit Null Ordinary Least Squares Model}
 \usage{
 FitNull(y, A = NULL)
 }
 \arguments{
-\item{y}{a n x m matrix of m phenotypes (one phenotype / column)}
+\item{y}{a n x m matrix of m quantitative phenotypes (one phenotype / column)}
 
 \item{A}{a n x q matrix of q background covariates}
 }
 \description{
-Fit Null Linear Model
+Fit Null Ordinary Least Squares Model
 }

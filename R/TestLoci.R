@@ -100,6 +100,29 @@ calc_k_sched <- function(x){
   xx
 }
 
+#' Wrapper to Test a Chromosome with LOCATER and kalis
+#'
+#' A simple wrapper function designed to allow users to easliy run LOCATER in conjunction with kalis.
+#'
+#' @param y a \code{n} x \code{m} matrix of m quantitative phenotypes (one phenotype / column)
+#' @param pars a \code{kalisParameters} object specifing HMM parameters to the Li and Stephens HMM as returned by \link{\code{kalis::Parameters}}
+#' @param target.loci a vector of integers specifying index of variants among those cached with \link{\code{kalis::CacheHaplotypes}} to be screened with LOCATER
+#' @param A a \code{n} x \code{q} matrix of q background covariates (an intercept -- column of 1s -- should be included). Just an intercept by default.
+#' @param test.opts a list of testing options that can customized the behavior of \code{TestLoci} (further documentation coming)
+#' @param verbose a logical, if TRUE print progress statements as \code{TestLoci} progresses
+#' @param num.ckpts an integer, the number of checkpoints that can be stored in memory. default = 0. Increasing even to just `2L` or `3L` yields significant speed ups.
+#' @param ckpt.first.locus a logical, should the first target locus be stored as a checkpoint. Default is FALSE but if the first target locus is very far from start of the cached chromosome, TRUE may yield an acceleration.
+#' @param use.forking a logical, is multiprocessing by process forking allowed?  Some relatively minor acclerations are possible if TRUE, but users should verify that it is safe to launch forked processes on their compute cluster.
+#' @param nthreads an integer, number of threads available
+#' @return a data.table with one row per target locus including the following key fields
+#' \itemize{
+#' \item \code{locus.idx}: the index of corresponding variant (corresponding to \code{target.loci})
+#' \item \code{phenotype}: the phenotype tested (given a column index of \code{y} )
+#' \item \code{tot}: LOCATER -log10 p-value
+#' \item \code{smt}: -log10 p-value from single marker testing
+#' \item \code{rd}: -log10 p-value returned by running Stable Distillation
+#' \item \code{qform}: -log10 p-value returned by quadratic form testing
+#' }
 #' @export
 TestLoci <- function(y, # test phenotypes y
                      pars, # with HMM parameters pars

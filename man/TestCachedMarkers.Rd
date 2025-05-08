@@ -2,8 +2,8 @@
 % Please edit documentation in R/TestMarker.R
 \name{TestCachedMarkers}
 \alias{TestCachedMarkers}
-\title{Test All Markers
-Fast method for performing SMT on a genotype matrix}
+\title{Test All Cached Markers
+Fast method for performing single marker testing across all variants stored in the \code{kalis::CacheHaplotypes}}
 \usage{
 TestCachedMarkers(
   y,
@@ -14,7 +14,23 @@ TestCachedMarkers(
   model = "additive"
 )
 }
+\arguments{
+\item{y}{a \code{n} x \code{m} matrix of \code{m} quantitative phenotypes (one phenotype / column)}
+
+\item{A}{a \code{n} x \code{q} matrix of \code{q} background covariates}
+
+\item{from}{a positive integer giving the index of the first variant in the cache that should be tested, default = 1L.}
+
+\item{to}{a positive integer giving the index of the last variant in the cache that should be tested, default = \link{\code{kalis::L()}}, the last variant.}
+
+\item{ploidy}{a positive integer giving the ploidy of the organisms whose haplotypes were cached, default = 2L.}
+
+\item{model}{a character in "additive", "recessive", or "dominant" giving the model of inheritance that should be tested, default = "additive"}
+}
+\value{
+a data.frame of -log10 p-values. Each row corresponds to a variant tested (in order starting with the variant with index \code{from}) and each of the \code{m} columns corresponds to a phenotype provided in \code{y} (in the same order as the columns of \code{y}).
+}
 \description{
-Test All Markers
-Fast method for performing SMT on a genotype matrix
+Test All Cached Markers
+Fast method for performing single marker testing across all variants stored in the \code{kalis::CacheHaplotypes}
 }

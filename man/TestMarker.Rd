@@ -2,7 +2,7 @@
 % Please edit documentation in R/TestMarker.R
 \name{TestMarker}
 \alias{TestMarker}
-\title{Perform SMT}
+\title{Perform Single Marker Testing (SMT) on a particular variant}
 \usage{
 TestMarker(x, g, add.noise = FALSE)
 }
@@ -13,6 +13,14 @@ TestMarker(x, g, add.noise = FALSE)
 
 \item{add.noise}{if 'raw' return raw residuals, if FALSE simply rank normalize residuals, if TRUE add structured noise along the subspace spanned by the background covs and genotype so that the residuals are 'full rank': truly from N(0,I), not a curved Gaussian.}
 }
+\value{
+a list with three elements
+\itemize{
+\item `p-value`: single marker test p-value
+\item `y`: the residual phenotype vector after testing the genotype
+\item `Q`: an orthogonal matrix with columns spanning the column space of the tested genotype and the background covariates in the null model, useful for further testing
+}
+}
 \description{
-Perform SMT
+Perform Single Marker Testing (SMT) on a particular variant
 }

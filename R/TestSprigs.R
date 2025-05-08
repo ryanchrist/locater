@@ -791,8 +791,18 @@ new_test_sprigs <- function(y, x, layers, sprigs, ortho = FALSE, ...){
 
 }
 
+
+#' Test Sprigs
+#'
+#' Test Sprigs object as returned by \link{\code{kalis::Sprigs}} using Stable Distillation.
+#'
+#' @param y a \code{n} x \code{m} matrix of phenotype residuals, one phenotype per column
+#' @param sprigs a list as returned by \link{\code{kalis::Sprigs}}
+#' @param ortho a logical, to be deprecated, currently kept for background compatibility
+#' @param Q a \code{n} x \code{q} orthogonal matrix with columns spanning the column space of the background covariates
+#' @param use.forking a logical, is multiprocessing by process forking allowed?  Some relatively minor acclerations are possible if TRUE, but users should verify that it is safe to launch forked processes on their compute cluster.
 #' @export
-TestSprigs <- function(y, sprigs, ortho = FALSE, Q = matrix(1/sqrt(nrow(y)),nrow(y),1), use.forking = FALSE, ...){
+TestSprigs <- function(y, sprigs, ortho = FALSE, Q = matrix(1/sqrt(nrow(y)),nrow(y),1), use.forking = FALSE){
 
   # min number of predictors required to run Renyi Distillation at all
   if(sprigs$num.sprigs < 8){ # require there to be at least 8 sprigs to run

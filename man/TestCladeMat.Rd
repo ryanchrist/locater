@@ -2,7 +2,7 @@
 % Please edit documentation in R/TestClades.R
 \name{TestCladeMat}
 \alias{TestCladeMat}
-\title{Test a Clade Matrix for association with phenotypes}
+\title{Test a Clade Matrix (local relatedness matrix) for association with phenotypes}
 \usage{
 TestCladeMat(
   y,
@@ -18,11 +18,11 @@ TestCladeMat(
 )
 }
 \arguments{
-\item{y}{a matrix of phenotypes}
+\item{y}{a \code{n} by \code{m} matrix of quantitative phenotypes for \code{n} samples and \code{m} phenotypes}
 
-\item{M}{a matrix as produced by \code{kalis::CladesMat}}
+\item{M}{a local \code{n} by \code{n} relatedness/clade matrix, such as one produced by \code{kalis::CladesMat}}
 
-\item{Q}{an orthogonal matrix whose columns span the column space of the background covariates}
+\item{Q}{a \code{n} by \code{q} orthogonal matrix whose columns span the column space of the background covariates}
 
 \item{k}{a vector of non-negative integers, number of eigenvalues to calculate to try to approximate the null distribution, see Details.}
 
@@ -30,19 +30,27 @@ TestCladeMat(
 
 \item{stop.eval.func}{a function that returns TRUE if all associations can be ruled insignificant and eigendecomposition stopped early, see Details.}
 
+\item{calc.obs.T}{experimental feature coming soon that will allow return of truncated quadratic form statistics \code{T}}
+
 \item{use.forking}{a logical, should forking be used during underlying FFT?}
 
 \item{nthreads}{a positive integer, how many cores in multithreaded routines?}
 
 \item{min.prop.var}{a double in [0,1], if we've obtained enough eigenvalues to explain at least this minimum proportion of variance, then we can trust our approximation and stop calculating eigenvalues, see Details.}
-
-\item{cs.approx}{a logical, should a difference of chi-squares be used to try to approximate remainder or should all of the remainder be left to a Gaussian approximation (the default)}
 }
 \value{
-With with p-values for Clade Testing
+A data.frame with \code{m} rows (the first row corresponding to the first phenotype/column in \code{y}). The data frame has fields:
+\itemize{
+\item \code{qform}: the quadratic form -log10 p-value
+\item \code{obs}: the observed value of the quadratic form test statistic
+\item \code{obs.T}: the observed value of the truncated quadratic form test statistic (experimental feature, coming soon, all NAs for now)
+\item \code{precise}: a logical, if TRUE the value of \code{qform} can be trusted based on our robust approximation of the remainder term -- the eigendecomposition stopping criteria was reached.
+If FALSE, the largest number of eigenvalues in the \code{k} provided was not sufficient to satisfy the stopping criteria so the approximation may be unreliable -- consider retrying with a larger eigendecomposition budget in \code{k}.
+\item \code{exit.status}: an integer, if 0 no errors were encountered.
+}
 }
 \description{
-Test a local phylogeny for association with phenotypes based on a matrix prodced by \code{kalis::CladesMat}
+Test a local relatedness matrix for association with phenotype(s).
 }
 \details{
 Concerning the specification of k, k=0 represents evaluating no eigenvalues and simply calculating the Satterthwaite (SW) approximation based on the traces of the matrix.

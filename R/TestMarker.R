@@ -1,5 +1,5 @@
-#' Fit Null Linear Model
-#' @param y a n x m matrix of m phenotypes (one phenotype / column)
+#' Fit Null Ordinary Least Squares Model
+#' @param y a n x m matrix of m quantitative phenotypes (one phenotype / column)
 #' @param A a n x q matrix of q background covariates
 #'@export
 FitNull <- function(y, A = NULL){
@@ -24,10 +24,16 @@ FitNull <- function(y, A = NULL){
        "sumsq" = sumsq)
 }
 
-#' Perform SMT
+#' Perform Single Marker Testing (SMT) on a particular variant
 #' @param x a null model object as returned by \link{FitNull}
 #' @param g a genotype vector
 #' @param add.noise if 'raw' return raw residuals, if FALSE simply rank normalize residuals, if TRUE add structured noise along the subspace spanned by the background covs and genotype so that the residuals are 'full rank': truly from N(0,I), not a curved Gaussian.
+#' @return a list with three elements
+#' \itemize{
+#' \item `p-value`: single marker test p-value
+#' \item `y`: the residual phenotype vector after testing the genotype
+#' \item `Q`: an orthogonal matrix with columns spanning the column space of the tested genotype and the background covariates in the null model, useful for further testing
+#' }
 #'@export
 TestMarker <- function(x, g, add.noise = FALSE){
   if(all(g==g[1])){
@@ -69,9 +75,15 @@ TestMarker <- function(x, g, add.noise = FALSE){
        "Q" = Q.local)
 }
 
-#' Test All Markers
-#' Fast method for performing SMT on a genotype matrix
-#'
+#' Test All Cached Markers
+#' Fast method for performing single marker testing across all variants stored in the \code{kalis::CacheHaplotypes}
+#' @param y a \code{n} x \code{m} matrix of \code{m} quantitative phenotypes (one phenotype / column)
+#' @param A a \code{n} x \code{q} matrix of \code{q} background covariates
+#' @param from a positive integer giving the index of the first variant in the cache that should be tested, default = 1L.
+#' @param to a positive integer giving the index of the last variant in the cache that should be tested, default = \link{\code{kalis::L()}}, the last variant.
+#' @param ploidy a positive integer giving the ploidy of the organisms whose haplotypes were cached, default = 2L.
+#' @param model a character in "additive", "recessive", or "dominant" giving the model of inheritance that should be tested, default = "additive"
+#' @return a data.frame of -log10 p-values. Each row corresponds to a variant tested (in order starting with the variant with index \code{from}) and each of the \code{m} columns corresponds to a phenotype provided in \code{y} (in the same order as the columns of \code{y}).
 #' @export
 TestCachedMarkers <- function(y, A = NULL, from = 1L, to = kalis::L(), ploidy = 2L, model = "additive"){
 
@@ -79,7 +91,7 @@ TestCachedMarkers <- function(y, A = NULL, from = 1L, to = kalis::L(), ploidy = 
   if(length(from)!=1 || from > kalis::L() || from < 1){
     stop("from must be an integer in [1,kalis::L()]")}
   if(length(to)!=1 || to > kalis::L() || to < 1){
-    stop("to must be an integer in [1,kalis::L()]")}
+    stop("to must be an integer in [1,kalis:L()]")}
   if(from>to){
     stop("from must be <= to")}
 

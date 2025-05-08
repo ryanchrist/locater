@@ -24,7 +24,7 @@ divide_interval <- function(x,min.gap){
 #'
 #' Use recombination distance (and preliminary single marker test results) to select target variants for screening
 #
-#' @param map a vector specifying the recombination map 'CDF' at all cached variants
+#' @param map a vector specifying the recombination map 'CDF' at all cached variants in cM
 #' @param min.cM the desired minimum recombination distance between target loci in cM
 #' @param from the first variant index to consider as a target
 #' @param to the last variant index to consider as a target

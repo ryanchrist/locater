@@ -74,10 +74,19 @@ mpset_cdf_exclude1 <- function(x, lower.tail = TRUE, log.p = FALSE){
 
 
 #' MSSE Test
-#' Test MSSE
+#' A p-value combination test that combines three independent p-values (element wise if three vectors are given) while prioritizing the first \code{x}, as proposed in our pre-print \link{www.biorxiv.org/content/10.1101/2024.09.30.615852}. See Details
+#'
+#' Let \code{f} be a Fisher combination function that maps a set of -log10 p-values to a single -log10 p-value using the classic Fisher combination approach.
+#' In a setting where we wish to combine three -log10 p-values -- \code{x}, \code{y}, and \code{z} -- using \code{f(x,y,z)} treats all three -log10 p-values exchangeably.
+#' However, in some settings, we may be using \code{y} and \code{z} to boost the signal in \code{x}. In other words, we may be able to safely assume that \code{f(x,y,z)} has no chance of being significant is \code{x} is not at least somewhat significant.
+#' We run into this setting with LOCATER where \code{x} corresponds to the single marker test (SMT) -log10 p-value while \code{y} and \code{z} correspond to tests performed via Stable Distillation and QForm respectively.
+#' In this context, MSSE gains power over Fisher combination by ignoring cases where \code{y} and/or \code{z} would be significant without \code{x} being somewhat significant.
+#'
 #' @param x vector of -log10 p-values
 #' @param y vector of -log10 p-values
 #' @param z vector of -log10 p-values
+#' @param test.1.solo logical, if FALSE ignore situations where \code{x} might be significant by itself and focus statistical power on cases where \code{x} is only significant in combination with \code{y} and/or \code{z}. By default = TRUE.
+#' @return a vector of -log10 p-values
 #' @export
 msse.test <- function(x,y,z, test.1.solo = TRUE){
 

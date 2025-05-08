@@ -14,7 +14,7 @@ FindTargetVars(
 )
 }
 \arguments{
-\item{map}{a vector specifying the recombination map 'CDF' at all cached variants}
+\item{map}{a vector specifying the recombination map 'CDF' at all cached variants in cM}
 
 \item{min.cM}{the desired minimum recombination distance between target loci in cM}
 

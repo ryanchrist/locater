@@ -7,7 +7,7 @@
 distill_pivot_par(y, x, Q, max_num_causal, p_order = seq_len(ncol(x)), ...)
 }
 \arguments{
-\item{y}{a n x m matrix of outcome vectors, one outcome per column}
+\item{y}{a n x m matrix of phenotype vectors, one phenotype per column}
 
 \item{x}{a n x p matrix of predictors (may be passed as a \code{sparseMatrix}, see the \code{Matrix} package)}
 
@@ -19,14 +19,15 @@ distill_pivot_par(y, x, Q, max_num_causal, p_order = seq_len(ncol(x)), ...)
 }
 \value{
 a list containing
+ \itemize{
+ \item \code{p_value} a vector of m p-values from the Renyi Outlier Test, in the same order as the phenotype vectors provided
 
-  \code{p_value} a vector of m p-values from the Renyi Outlier Test, in the same order as the outcome vectors provided
+  \item \code{u} a p x m matrix of extracted p-values
 
-  \code{u} a p x m matrix of extracted p-values
+  \item \code{signs} a p x m matrix of effect signs corresponding the extracted p-values \code{u}. Note, these signs are useful for post-hoc interpretation but are NOT extracted in the SD procedure so they are NOT independent of \code{u}.
 
-  \code{signs} a p x m matrix of effect signs corresponding the extracted p-values \code{u}. Note, these signs are useful for post-hoc interpretation but are NOT extracted in the SD procedure so they are NOT independent of \code{u}.
-
-  \code{y} a n x p matrix of distilled outcome vectors y left over as a biproduct of distillation (independent of \code{u}) and ready for downstream testing
+  \item \code{y} a n x m matrix of distilled phenotype vectors y left over as a biproduct of distillation (independent of \code{u}) and ready for downstream testing
+}
 }
 \description{
 Distill multiple outcome vectors under the same null and alternative OLS model (in parallel)
