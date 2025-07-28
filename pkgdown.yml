@@ -3,7 +3,7 @@ pkgdown: 2.1.3
 pkgdown_sha: ~
 articles:
   simple_gwas_example: simple_gwas_example.html
-last_built: 2025-07-28T16:45Z
+last_built: 2025-07-28T16:47Z
 urls:
   reference: https://ryanchrist.github.io/locater/reference
   article: https://ryanchrist.github.io/locater/articles
